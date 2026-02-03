@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "yuehua-ziniao-webdriver"
-version = "0.1.0"
+version = "0.1.1"
 description = "紫鸟浏览器自动化 Python SDK - 提供店铺管理、浏览器控制等功能"
 authors = [
     { name = "Yuehua", email = "shengxi_2000@outlook.com" }
