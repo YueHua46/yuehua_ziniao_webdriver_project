@@ -45,31 +45,15 @@ class ProcessManager:
             f"socket_port={socket_port}, version={version}"
         )
     
-    def kill_existing_process(self, force: bool = True) -> bool:
+    def kill_existing_process(self) -> bool:
         """关闭已存在的紫鸟客户端进程
         
-        Args:
-            force: 是否强制关闭（不询问用户），默认 True
-            
         Returns:
             bool: 成功关闭返回 True，用户取消返回 False
             
         Raises:
             ProcessError: 进程关闭失败
         """
-        # 确认是否继续
-        if not force:
-            try:
-                confirmation = input(
-                    "在启动之前，需要先关闭紫鸟浏览器的主进程，"
-                    "确定要终止进程吗？(y/n): "
-                )
-                if confirmation.lower() != 'y':
-                    logger.info("用户取消关闭进程")
-                    return False
-            except (EOFError, KeyboardInterrupt):
-                logger.info("用户取消关闭进程")
-                return False
         
         try:
             if is_windows():
