@@ -45,11 +45,11 @@ class ProcessManager:
             f"socket_port={socket_port}, version={version}"
         )
     
-    def kill_existing_process(self, force: bool = False) -> bool:
+    def kill_existing_process(self, force: bool = True) -> bool:
         """关闭已存在的紫鸟客户端进程
         
         Args:
-            force: 是否强制关闭（不询问用户），默认 False
+            force: 是否强制关闭（不询问用户），默认 True
             
         Returns:
             bool: 成功关闭返回 True，用户取消返回 False
