@@ -19,27 +19,24 @@ from DrissionPage.common import By
 
 def kill_process(version: Literal["v5", "v6"]):
     """
-    杀紫鸟客户端进程
+    杀紫鸟客户端进程（自动执行，无需确认）
     :param version: 客户端版本
     """
-    # 确认是否继续
-    confirmation = input("在启动之前，需要先关闭紫鸟浏览器的主进程，确定要终止进程吗？(y/n): ")
-    if confirmation.lower() == 'y':
-        if is_windows:
-            if version == "v5":
-                process_name = 'SuperBrowser.exe'
-            else:
-                process_name = 'ziniao.exe'
-            os.system('taskkill /f /t /im ' + process_name)
-            time.sleep(3)
-        elif is_mac:
-            os.system('killall ziniao')
-            time.sleep(3)
-        elif is_linux:
-            os.system('killall ziniaobrowser')
-            time.sleep(3)
-    else:
-        exit()
+    print("正在关闭紫鸟浏览器主进程...")
+    if is_windows:
+        if version == "v5":
+            process_name = 'SuperBrowser.exe'
+        else:
+            process_name = 'ziniao.exe'
+        os.system('taskkill /f /t /im ' + process_name)
+        time.sleep(3)
+    elif is_mac:
+        os.system('killall ziniao')
+        time.sleep(3)
+    elif is_linux:
+        os.system('killall ziniaobrowser')
+        time.sleep(3)
+    print("紫鸟浏览器主进程已关闭")
 
 
 def start_browser():
