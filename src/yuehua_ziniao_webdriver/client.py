@@ -137,7 +137,7 @@ class ZiniaoClient:
         logger.info("=== 启动紫鸟客户端 ===")
         
         # 关闭已存在的进程
-        if not self.process_manager.kill_existing_process(force=kill_existing):
+        if not self.process_manager.kill_existing_process():
             logger.info("用户取消启动")
             return
         
