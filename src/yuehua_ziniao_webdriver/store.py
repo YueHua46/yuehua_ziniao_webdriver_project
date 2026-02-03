@@ -226,6 +226,18 @@ class StoreManager:
                 close_callback=lambda sid: self.close_store(sid)
             )
             
+            # 打开店铺后先做 IP 检测再打开店铺平台主页
+            if ip_check_url:
+                ip_ok = session.check_ip()
+                if not ip_ok:
+                    logger.warning("IP 检测未通过，仍将打开启动页")
+            else:
+                logger.warning("ipDetectionPage 为空，请升级紫鸟浏览器到最新版，跳过 IP 检测")
+            if launcher_page:
+                session.open_launcher_page()
+            else:
+                logger.warning("launcherPage 为空，无法打开店铺平台主页")
+
             return session
             
         else:

@@ -289,6 +289,7 @@ def use_one_browser_run_task(browser):
             open_launcher_page(browser, ret_json.get("launcherPage"))
             # 打开店铺平台主页后进行后续自动化操作
             # todo 后续的自动化操作
+            time.sleep(10)
         else:
             print("ip检测不通过，请检查")
     except:
@@ -325,7 +326,7 @@ if __name__ == "__main__":
 
     # todo 1、修改client_path：紫鸟客户端在本设备的路径
     if is_windows:
-        client_path = R'D:\ziniao\ziniao.exe'  # 紫鸟客户端在本设备的路径，V5程序名为starter.exe，V6程序名为ziniao.exe
+        client_path = R'C:\Users\DIANCHEN\SuperBrowser\starter.exe'  # 紫鸟客户端在本设备的路径，V5程序名为starter.exe，V6程序名为ziniao.exe
     elif is_linux:
         client_path = R'/opt/ziniao/ziniaobrowser'  # 紫鸟客户端在本设备的路径
     else:
@@ -334,9 +335,9 @@ if __name__ == "__main__":
 
     # todo 2、修改用户登录信息，使用企业登录
     user_info = {
-        "company": "您登录紫鸟浏览器的时候输入的企业公司名",
-        "username": "您登录紫鸟浏览器的时候输入的企业用户名",
-        "password": "您登录紫鸟浏览器的时候输入的密码"
+        "company": "深圳市点辰实业有限公司",
+        "username": "jennov89",
+        "password": "Rpa@88365656"
     }
 
     """  
@@ -351,7 +352,7 @@ if __name__ == "__main__":
 
     # 终止紫鸟客户端已启动的进程
     # todo 3、v5与v6的进程名不同，按版本修改v5或v6
-    kill_process(version="v6")
+    kill_process(version="v5")
 
     print("=====启动客户端=====")
     start_browser()
@@ -367,13 +368,13 @@ if __name__ == "__main__":
 
 
     """打开第一个店铺运行脚本"""
-    # use_one_browser_run_task(browser_list[0])
+    use_one_browser_run_task(browser_list[0])
 
     """循环打开所有店铺运行脚本"""
     # use_all_browser_run_task(browser_list)
 
     """多线程并发打开所有店铺运行脚本，max_threads设置最大线程数"""
-    use_all_browser_run_task_with_thread_pool(browser_list, max_threads=3)
+    # use_all_browser_run_task_with_thread_pool(browser_list, max_threads=3)
 
 
     """关闭客户端"""
