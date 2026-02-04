@@ -119,18 +119,31 @@ class ConfigDict(TypedDict, total=False):
 # ============================================================================
 
 class StoreOpenOptions(TypedDict, total=False):
-    """打开店铺的选项"""
-    isWebDriverReadOnlyMode: int  # 只读模式，默认 0
-    isprivacy: int  # 隐私模式，默认 0
-    isHeadless: int  # 无头模式，默认 0
-    cookieTypeSave: int  # Cookie 保存类型，默认 0
-    jsInfo: str  # 注入的 JS 信息
-    isWaitPluginUpdate: int  # 是否等待插件更新，默认 0
-    cookieTypeLoad: int  # Cookie 加载类型，默认 0
-    runMode: str  # 运行模式，默认 "1"
-    isLoadUserPlugin: bool  # 是否加载用户插件，默认 False
-    pluginIdType: int  # 插件 ID 类型，默认 1
-    privacyMode: int  # 隐私模式，默认 0
+    """打开店铺时的配置字典，键值对形式。用于 open_store / open_store_by_name / open_stores_by_names 的 options 参数。
+
+    可传键（均为可选）:
+        isHeadless: int — 无头模式，0=否 1=是，默认 0
+        isWebDriverReadOnlyMode: int — WebDriver 只读模式，0=否 1=是，默认 0
+        isWaitPluginUpdate: int — 是否等待插件更新，默认 0
+        cookieTypeLoad: int — Cookie 加载类型，默认 0
+        cookieTypeSave: int — Cookie 保存类型，默认 0
+        runMode: str — 运行模式，默认 "1"
+        isLoadUserPlugin: bool — 是否加载用户插件，默认 False
+        pluginIdType: int — 插件 ID 类型，默认 1
+        privacyMode: int — 隐私模式，默认 0
+        jsInfo: str — 注入的 JS 信息，默认 ""
+    """
+    isWebDriverReadOnlyMode: int
+    isprivacy: int
+    isHeadless: int
+    cookieTypeSave: int
+    jsInfo: str
+    isWaitPluginUpdate: int
+    cookieTypeLoad: int
+    runMode: str
+    isLoadUserPlugin: bool
+    pluginIdType: int
+    privacyMode: int
 
 
 # ============================================================================
