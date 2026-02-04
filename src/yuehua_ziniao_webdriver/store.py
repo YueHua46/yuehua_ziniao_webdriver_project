@@ -144,13 +144,13 @@ class StoreManager:
     def open_store(
         self,
         store_identifier: str,
-        **options
+        options: Optional[StoreOpenOptions] = None,
     ) -> BrowserSession:
         """打开店铺
         
         Args:
             store_identifier: 店铺标识（browserOauth 或 browserId）
-            **options: 打开店铺的选项（参见 StoreOpenOptions）
+            options: 打开店铺的配置字典，键参见 StoreOpenOptions
             
         Returns:
             BrowserSession: 浏览器会话对象
@@ -159,20 +159,21 @@ class StoreManager:
             StoreOperationError: 打开失败
         """
         request_id = str(uuid.uuid4())
-        
+        opts = options or {}
+
         # 构建请求数据
         data: Dict[str, Any] = {
             "action": "startBrowser",
-            "isWaitPluginUpdate": options.get("isWaitPluginUpdate", 0),
-            "isHeadless": options.get("isHeadless", 0),
+            "isWaitPluginUpdate": opts.get("isWaitPluginUpdate", 0),
+            "isHeadless": opts.get("isHeadless", 0),
             "requestId": request_id,
-            "isWebDriverReadOnlyMode": options.get("isWebDriverReadOnlyMode", 0),
-            "cookieTypeLoad": options.get("cookieTypeLoad", 0),
-            "cookieTypeSave": options.get("cookieTypeSave", 0),
-            "runMode": options.get("runMode", "1"),
-            "isLoadUserPlugin": options.get("isLoadUserPlugin", False),
-            "pluginIdType": options.get("pluginIdType", 1),
-            "privacyMode": options.get("privacyMode", 0),
+            "isWebDriverReadOnlyMode": opts.get("isWebDriverReadOnlyMode", 0),
+            "cookieTypeLoad": opts.get("cookieTypeLoad", 0),
+            "cookieTypeSave": opts.get("cookieTypeSave", 0),
+            "runMode": opts.get("runMode", "1"),
+            "isLoadUserPlugin": opts.get("isLoadUserPlugin", False),
+            "pluginIdType": opts.get("pluginIdType", 1),
+            "privacyMode": opts.get("privacyMode", 0),
         }
         data.update(self.user_info)
         
@@ -183,7 +184,7 @@ class StoreManager:
             data["browserOauth"] = store_identifier
         
         # 注入 JS 信息（如果提供）
-        js_info = options.get("jsInfo", "")
+        js_info = opts.get("jsInfo", "")
         if len(str(js_info)) > 2:
             data["injectJsInfo"] = json.dumps(js_info)
         
@@ -257,14 +258,14 @@ class StoreManager:
         self,
         store_name: str,
         exact_match_mode: bool = False,
-        **options
+        options: Optional[StoreOpenOptions] = None,
     ) -> BrowserSession:
         """通过店铺名称打开店铺
         
         Args:
             store_name: 店铺名称
             exact_match_mode: 是否精确匹配，默认 False（模糊匹配）
-            **options: 打开店铺的选项
+            options: 打开店铺的配置字典，键参见 StoreOpenOptions
             
         Returns:
             BrowserSession: 浏览器会话对象
@@ -305,14 +306,14 @@ class StoreManager:
                 message="店铺 OAuth 标识为空"
             )
         
-        return self.open_store(store_oauth, **options)
+        return self.open_store(store_oauth, options=options)
     
     def open_stores_by_names(
         self,
         store_names: List[str],
         max_workers: int = 3,
         exact_match_mode: bool = False,
-        **options
+        options: Optional[StoreOpenOptions] = None,
     ) -> Dict[str, BrowserSession]:
         """并发打开多个店铺（通过店铺名称）
         
@@ -320,7 +321,7 @@ class StoreManager:
             store_names: 店铺名称列表
             max_workers: 最大并发数，默认 3
             exact_match_mode: 是否精确匹配，默认 False
-            **options: 打开店铺的选项
+            options: 打开店铺的配置字典，键参见 StoreOpenOptions
             
         Returns:
             Dict[str, BrowserSession]: 店铺名称到浏览器会话的映射
@@ -339,7 +340,7 @@ class StoreManager:
                 session = self.open_store_by_name(
                     name,
                     exact_match_mode=exact_match_mode,
-                    **options
+                    options=options,
                 )
                 return (name, session)
             except Exception as e:

@@ -10,7 +10,7 @@ import uuid
 from typing import List, Dict, Optional, Union
 
 from .config import ZiniaoConfig
-from .types import Store, ConfigSource
+from .types import Store, ConfigSource, StoreOpenOptions
 from .http_client import HttpClient
 from .process import ProcessManager
 from .store import StoreManager
@@ -286,13 +286,13 @@ class ZiniaoClient:
     def open_store(
         self,
         store_id: str,
-        **options
+        options: Optional[StoreOpenOptions] = None,
     ) -> BrowserSession:
         """通过店铺 ID 打开店铺
         
         Args:
             store_id: 店铺 ID 或 OAuth 标识
-            **options: 打开店铺的选项
+            options: 打开店铺的配置字典，键值对参见 StoreOpenOptions（如 isHeadless、isWebDriverReadOnlyMode、cookieTypeSave 等）
             
         Returns:
             BrowserSession: 浏览器会话对象
@@ -303,21 +303,20 @@ class ZiniaoClient:
         """
         if not self._started:
             raise ClientNotStartedError()
-        
-        return self.store_manager.open_store(store_id, **options)
+        return self.store_manager.open_store(store_id, options=options)
     
     def open_store_by_name(
         self,
         store_name: str,
-        exact_match: bool = False,
-        **options
+        exact_match: bool = True,
+        options: Optional[StoreOpenOptions] = None,
     ) -> BrowserSession:
         """通过店铺名称打开店铺
         
         Args:
             store_name: 店铺名称（支持模糊匹配）
-            exact_match: 是否精确匹配，默认 False（模糊匹配）
-            **options: 打开店铺的选项
+            exact_match: 是否精确匹配，默认 True（精确匹配）
+            options: 打开店铺的配置字典，键值对参见 StoreOpenOptions（如 isHeadless、isWebDriverReadOnlyMode、cookieTypeSave 等）
             
         Returns:
             BrowserSession: 浏览器会话对象
@@ -330,11 +329,10 @@ class ZiniaoClient:
         """
         if not self._started:
             raise ClientNotStartedError()
-        
         return self.store_manager.open_store_by_name(
             store_name,
             exact_match_mode=exact_match,
-            **options
+            options=options,
         )
     
     def open_stores_by_names(
@@ -342,7 +340,7 @@ class ZiniaoClient:
         store_names: List[str],
         max_workers: int = 3,
         exact_match: bool = False,
-        **options
+        options: Optional[StoreOpenOptions] = None,
     ) -> Dict[str, BrowserSession]:
         """并发打开多个店铺（通过店铺名称）
         
@@ -350,7 +348,7 @@ class ZiniaoClient:
             store_names: 店铺名称列表
             max_workers: 最大并发数，默认 3
             exact_match: 是否精确匹配，默认 False
-            **options: 打开店铺的选项
+            options: 打开店铺的配置字典，键值对参见 StoreOpenOptions（如 isHeadless、isWebDriverReadOnlyMode、cookieTypeSave 等）
             
         Returns:
             Dict[str, BrowserSession]: 店铺名称到浏览器会话的映射
@@ -364,12 +362,11 @@ class ZiniaoClient:
         """
         if not self._started:
             raise ClientNotStartedError()
-        
         return self.store_manager.open_stores_by_names(
             store_names,
             max_workers=max_workers,
             exact_match_mode=exact_match,
-            **options
+            options=options,
         )
     
     def close_store(self, store_id: str) -> None:

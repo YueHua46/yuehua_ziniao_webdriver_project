@@ -3,7 +3,15 @@
 演示如何使用紫鸟浏览器 SDK 的核心功能。
 """
 
-from yuehua_ziniao_webdriver import ZiniaoClient, ZiniaoConfig, setup_logging
+# 未安装包时也可直接运行：将项目 src 加入 path（安装后 pip install -e . 则无需此段）
+import sys
+from pathlib import Path
+_here = Path(__file__).resolve().parent
+_src = _here.parent / "src"
+if _src.exists() and str(_src) not in sys.path:
+    sys.path.insert(0, str(_src))
+
+from yuehua_ziniao_webdriver import ZiniaoClient, ZiniaoConfig, StoreOpenOptions, setup_logging
 import logging
 
 # ============================================================================
@@ -87,15 +95,20 @@ def example_open_by_name():
     print("\n=== 示例 3: 通过名称打开店铺 ===\n")
     
     config = ZiniaoConfig(
-        client_path=r"D:\ziniao\ziniao.exe",
-        company="你的企业名",
-        username="你的用户名",
-        password="你的密码"
+        client_path=fr"{Path.home()}\SuperBrowser\starter.exe",
+        company="Company Name",
+        username="Username",
+        password="Password",
+        version="v5"
     )
     
     with ZiniaoClient(config) as client:
         # 通过名称打开店铺（支持模糊匹配）
-        session = client.open_store_by_name("我的店铺")  # 修改为你的店铺名称
+        # 可选：传入 options 字典配置打开方式，键参见 StoreOpenOptions（IDE 有提示）
+        options: StoreOpenOptions = {
+            "isLoadUserPlugin": True
+        }
+        session = client.open_store_by_name("Store Name", exact_match=True, options=options)  # 修改为你的店铺名称
         
         print(f"店铺已打开：{session.store_name}")
         
@@ -291,7 +304,7 @@ def main():
         # 取消注释运行对应的示例
         # example_basic_usage()
         # example_context_manager()
-        # example_open_by_name()
+        example_open_by_name()
         # example_open_multiple_stores()
         # example_search_stores()
         # example_config_from_dict()
