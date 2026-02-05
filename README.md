@@ -184,6 +184,26 @@ session.navigate("https://example.com", wait_time=2)
 session.close()
 ```
 
+### 平台模块（Amazon 示例）
+
+```python
+from yuehua_ziniao_webdriver.platforms.amazon import (
+    handle_login,
+    switch_language_to_cn,
+    switch_site,
+)
+
+session = client.open_store_by_name("我的店铺")
+tab = session.get_tab()
+
+# 切换语言与站点
+switch_language_to_cn(tab)
+switch_site(tab, "US")
+
+# 如遇登录页，执行登录流程
+handle_login(tab)
+```
+
 ### 5. 配置管理
 
 ```python
