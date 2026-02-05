@@ -1,10 +1,12 @@
 """Amazon 后台加载等待相关方法。"""
 
+import logging
 import time
 
 from DrissionPage import ChromiumPage
 from DrissionPage.errors import ContextLostError
-from logger import logger
+
+logger = logging.getLogger(__name__)
 
 
 def is_loading(page: ChromiumPage):

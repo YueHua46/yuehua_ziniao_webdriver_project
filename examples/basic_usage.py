@@ -250,12 +250,46 @@ def example_config_from_dict():
 
 
 # ============================================================================
-# 示例 7: 错误处理
+# 示例 7: 平台模块（Amazon）
+# ============================================================================
+
+def example_amazon_platform():
+    """Amazon 平台模块示例"""
+    print("\n=== 示例 7: 平台模块（Amazon） ===\n")
+
+    from yuehua_ziniao_webdriver.platforms.amazon import (
+        handle_login,
+        switch_language_to_cn,
+        switch_site,
+    )
+
+    config = ZiniaoConfig(
+        client_path=r"D:\ziniao\ziniao.exe",
+        company="你的企业名",
+        username="你的用户名",
+        password="你的密码",
+        version="v6"
+    )
+
+    with ZiniaoClient(config) as client:
+        session = client.open_store_by_name("我的店铺")
+        if session.check_ip():
+            session.open_launcher_page()
+            tab = session.get_tab()
+
+            switch_language_to_cn(tab)
+            switch_site(tab, "US")
+            if "signin" in tab.url:
+                handle_login(tab)
+
+
+# ============================================================================
+# 示例 8: 错误处理
 # ============================================================================
 
 def example_error_handling():
     """错误处理示例"""
-    print("\n=== 示例 7: 错误处理 ===\n")
+    print("\n=== 示例 8: 错误处理 ===\n")
     
     from yuehua_ziniao_webdriver import (
         StoreNotFoundError,
@@ -308,6 +342,7 @@ def main():
         # example_open_multiple_stores()
         # example_search_stores()
         # example_config_from_dict()
+        # example_amazon_platform()
         # example_error_handling()
         
         print("\n请取消注释要运行的示例函数")

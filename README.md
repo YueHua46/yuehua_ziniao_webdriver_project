@@ -187,11 +187,14 @@ session.close()
 ### 平台模块（Amazon 示例）
 
 ```python
+from yuehua_ziniao_webdriver import setup_logging
 from yuehua_ziniao_webdriver.platforms.amazon import (
     handle_login,
     switch_language_to_cn,
     switch_site,
 )
+
+setup_logging()
 
 session = client.open_store_by_name("我的店铺")
 tab = session.get_tab()
