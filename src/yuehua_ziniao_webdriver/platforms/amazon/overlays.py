@@ -1,7 +1,10 @@
 """Amazon 后台弹窗/遮罩处理相关方法。"""
 
+import logging
+
 from DrissionPage import ChromiumPage
-from logger import logger
+
+logger = logging.getLogger(__name__)
 
 
 def close_feedback_popup(page: ChromiumPage):

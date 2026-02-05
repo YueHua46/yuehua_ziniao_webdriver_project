@@ -1,9 +1,11 @@
 """Amazon 站点/语言切换相关方法。"""
 
+import logging
 import time
 
 from DrissionPage import ChromiumPage
-from logger import logger
+
+logger = logging.getLogger(__name__)
 
 from .auth import handle_login, is_login
 from .loading import wait_loading_disappear, wait_page_load_complete
