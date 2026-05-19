@@ -4,6 +4,24 @@
 
 本项目遵循[语义化版本](https://semver.org/lang/zh-CN/)规范。
 
+## [0.1.8] - 2026-05-19
+
+### 新增
+
+- `ZiniaoConfig` 新增 `host`、`listen_ip`、`cdp_host`、`cdp_proxy_host` 和 `extra_args`，支持远程 WebDriver HTTP 与 CDP 连接/暴露配置。
+- Linux 打开店铺示例 `examples/linux_open_store.py`，支持通过环境变量配置监听地址和 CDP 地址。
+
+### 变更
+
+- `HttpClient` 支持自定义 WebDriver HTTP 服务主机，不再固定为 `127.0.0.1`。
+- `BrowserSession` 和 `get_browser()` 支持通过 `host:port` 连接远程 CDP 调试端口，同时保持本机端口连接兼容。
+- 启动紫鸟客户端时会透传 `--listen_ip` 和额外启动参数。
+- `BrowserSession` 可选启动 TCP 代理，将本机 CDP 调试端口暴露到指定网卡地址。
+
+### 修复
+
+- HTTP 响应解析显式使用 UTF-8，减少中文错误信息乱码风险。
+
 ## [0.1.0] - 2026-02-03
 
 ### ✨ 新增

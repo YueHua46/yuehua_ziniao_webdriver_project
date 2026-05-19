@@ -105,6 +105,11 @@ class ConfigDict(TypedDict, total=False):
     """配置字典"""
     client_path: str  # 客户端路径（必需）
     socket_port: int  # 通信端口
+    host: str  # SDK 连接紫鸟 WebDriver HTTP 服务的主机
+    listen_ip: Optional[str]  # 紫鸟 WebDriver HTTP 服务监听地址
+    cdp_host: Optional[str]  # SDK 连接店铺 CDP 调试端口的主机
+    cdp_proxy_host: Optional[str]  # 对外暴露 CDP 调试端口的本机监听地址
+    extra_args: List[str]  # 启动紫鸟客户端时追加的命令行参数
     company: str  # 企业名称
     username: str  # 用户名
     password: str  # 密码

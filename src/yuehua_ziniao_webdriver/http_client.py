@@ -29,6 +29,7 @@ class HttpClient:
     def __init__(
         self,
         port: int,
+        host: str = "127.0.0.1",
         timeout: int = 120,
         max_retries: int = 3,
         retry_delay: float = 2.0
@@ -37,20 +38,28 @@ class HttpClient:
         
         Args:
             port: 通信端口
+            host: 紫鸟 WebDriver HTTP 服务主机
             timeout: 请求超时时间（秒）
             max_retries: 最大重试次数
             retry_delay: 重试延迟时间（秒）
         """
         self.port = port
+        self.host = host
         self.timeout = timeout
         self.max_retries = max_retries
         self.retry_delay = retry_delay
-        self.base_url = f"http://127.0.0.1:{port}"
+        self.base_url = self._build_base_url(host, port)
         
         logger.debug(
-            f"初始化 HTTP 客户端：port={port}, timeout={timeout}, "
+            f"初始化 HTTP 客户端：host={host}, port={port}, timeout={timeout}, "
             f"max_retries={max_retries}, retry_delay={retry_delay}"
         )
+
+    @staticmethod
+    def _build_base_url(host: str, port: int) -> str:
+        if ":" in host and not host.startswith("["):
+            host = f"[{host}]"
+        return f"http://{host}:{port}"
     
     def send_request(
         self,
@@ -87,9 +96,10 @@ class HttpClient:
                     data=json.dumps(data).encode('utf-8'),
                     timeout=self.timeout
                 )
+                response.encoding = "utf-8"
                 
                 # 解析响应
-                result = json.loads(response.text)
+                result = response.json()
                 
                 # 检查是否需要重试（返回 None）
                 if result is None and retry_on_none and attempt < self.max_retries:
@@ -187,8 +197,18 @@ class HttpClient:
             new_port: 新的端口号
         """
         self.port = new_port
-        self.base_url = f"http://127.0.0.1:{new_port}"
+        self.base_url = self._build_base_url(self.host, new_port)
         logger.info(f"更新通信端口：{new_port}")
+
+    def update_host(self, new_host: str) -> None:
+        """更新通信主机。
+
+        Args:
+            new_host: 新的主机名或 IP
+        """
+        self.host = new_host
+        self.base_url = self._build_base_url(new_host, self.port)
+        logger.info(f"更新通信主机：{new_host}")
     
     def test_connection(self) -> bool:
         """测试连接是否可用
@@ -209,6 +229,6 @@ class HttpClient:
     
     def __repr__(self) -> str:
         return (
-            f"HttpClient(port={self.port}, timeout={self.timeout}, "
-            f"max_retries={self.max_retries})"
+            f"HttpClient(host='{self.host}', port={self.port}, "
+            f"timeout={self.timeout}, max_retries={self.max_retries})"
         )

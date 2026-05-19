@@ -5,7 +5,9 @@
 
 import time
 import logging
-from typing import Optional, Callable, Any
+import socket
+import threading
+from typing import Optional, Callable, Any, List
 
 from DrissionPage import Chromium
 from DrissionPage.common import By
@@ -13,6 +15,118 @@ from DrissionPage.common import By
 from .exceptions import IPCheckError, ZiniaoError
 
 logger = logging.getLogger(__name__)
+
+
+class CdpTcpProxy:
+    """将对外 CDP 端口转发到本机浏览器调试端口。"""
+
+    def __init__(
+        self,
+        listen_host: str,
+        listen_port: int,
+        target_host: str,
+        target_port: int,
+    ) -> None:
+        self.listen_host = listen_host
+        self.listen_port = listen_port
+        self.target_host = target_host
+        self.target_port = target_port
+        self._server: Optional[socket.socket] = None
+        self._closed = threading.Event()
+        self._threads: List[threading.Thread] = []
+
+    def start(self) -> None:
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server.bind((self.listen_host, self.listen_port))
+        server.listen(128)
+        self._server = server
+
+        thread = threading.Thread(target=self._accept_loop, daemon=True)
+        thread.start()
+        self._threads.append(thread)
+
+        logger.info(
+            "CDP 代理已启动：%s:%s -> %s:%s",
+            self.listen_host,
+            self.listen_port,
+            self.target_host,
+            self.target_port,
+        )
+
+    def stop(self) -> None:
+        self._closed.set()
+        if self._server is not None:
+            try:
+                self._server.close()
+            except OSError:
+                pass
+            self._server = None
+
+    def _accept_loop(self) -> None:
+        assert self._server is not None
+
+        while not self._closed.is_set():
+            try:
+                client_socket, _ = self._server.accept()
+            except OSError:
+                break
+
+            thread = threading.Thread(
+                target=self._handle_client,
+                args=(client_socket,),
+                daemon=True,
+            )
+            thread.start()
+            self._threads.append(thread)
+
+    def _handle_client(self, client_socket: socket.socket) -> None:
+        try:
+            target_socket = socket.create_connection(
+                (self.target_host, self.target_port),
+                timeout=10,
+            )
+        except OSError:
+            client_socket.close()
+            return
+
+        threads = [
+            threading.Thread(
+                target=self._pipe,
+                args=(client_socket, target_socket),
+                daemon=True,
+            ),
+            threading.Thread(
+                target=self._pipe,
+                args=(target_socket, client_socket),
+                daemon=True,
+            ),
+        ]
+
+        for thread in threads:
+            thread.start()
+            self._threads.append(thread)
+
+    @staticmethod
+    def _pipe(source: socket.socket, target: socket.socket) -> None:
+        try:
+            while True:
+                data = source.recv(65536)
+                if not data:
+                    break
+                target.sendall(data)
+        except OSError:
+            pass
+        finally:
+            for sock in (source, target):
+                try:
+                    sock.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+                try:
+                    sock.close()
+                except OSError:
+                    pass
 
 
 class BrowserSession:
@@ -26,6 +140,8 @@ class BrowserSession:
         port: int,
         store_id: str,
         store_name: str,
+        host: str = "127.0.0.1",
+        proxy_host: Optional[str] = None,
         ip_check_url: Optional[str] = None,
         launcher_page: Optional[str] = None,
         close_callback: Optional[Callable[[str], None]] = None
@@ -36,32 +152,58 @@ class BrowserSession:
             port: 浏览器调试端口
             store_id: 店铺 ID/OAuth
             store_name: 店铺名称
+            host: 浏览器 CDP 调试端口主机
+            proxy_host: 对外暴露 CDP 调试端口的本机监听地址
             ip_check_url: IP 检测页面 URL（可选）
             launcher_page: 启动页面 URL（可选）
             close_callback: 关闭回调函数（可选）
         """
         self.port = port
+        self.host = host
+        self.proxy_host = proxy_host
         self.store_id = store_id
         self.store_name = store_name
         self.ip_check_url = ip_check_url
         self.launcher_page = launcher_page
         self.close_callback = close_callback
         self._browser: Optional[Chromium] = None
+        self._cdp_proxy: Optional[CdpTcpProxy] = None
         self._closed = False
         
         logger.debug(
             f"初始化浏览器会话：store={store_name}, "
-            f"port={port}, store_id={store_id}"
+            f"host={host}, port={port}, store_id={store_id}"
         )
         
         # 创建浏览器实例
         try:
-            self._browser = Chromium(port)
+            if proxy_host:
+                self._cdp_proxy = CdpTcpProxy(proxy_host, port, host, port)
+                self._cdp_proxy.start()
+            self._browser = Chromium(self._build_cdp_address(host, port))
             logger.info(f"成功连接到浏览器：{store_name}")
         except Exception as e:
+            if self._cdp_proxy is not None:
+                self._cdp_proxy.stop()
+                self._cdp_proxy = None
             error_msg = f"连接到浏览器失败：{e}"
             logger.error(error_msg)
-            raise ZiniaoError(error_msg, {"port": port, "error": str(e)})
+            raise ZiniaoError(
+                error_msg,
+                {"host": host, "port": port, "error": str(e)}
+            )
+
+    @staticmethod
+    def _build_cdp_address(host: str, port: int) -> Any:
+        """构建 DrissionPage 可识别的 CDP 地址。
+
+        本机连接沿用整数端口，避免影响既有行为；远程连接使用 host:port。
+        """
+        if host in ("127.0.0.1", "localhost", "::1"):
+            return port
+        if ":" in host and not host.startswith("["):
+            return f"[{host}]:{port}"
+        return f"{host}:{port}"
     
     @property
     def browser(self) -> Chromium:
@@ -216,6 +358,10 @@ class BrowserSession:
                 logger.debug(f"调用关闭回调成功：{self.store_name}")
             except Exception as e:
                 logger.error(f"调用关闭回调失败：{self.store_name}, 错误：{e}")
+
+        if self._cdp_proxy is not None:
+            self._cdp_proxy.stop()
+            self._cdp_proxy = None
         
         self._closed = True
         self._browser = None
@@ -239,20 +385,22 @@ class BrowserSession:
     def __repr__(self) -> str:
         return (
             f"BrowserSession(store='{self.store_name}', "
+            f"host='{self.host}', proxy_host='{self.proxy_host}', "
             f"port={self.port}, closed={self._closed})"
         )
 
 
-def get_browser(port: int) -> Chromium:
+def get_browser(port: int, host: str = "127.0.0.1") -> Chromium:
     """获取 DrissionPage 浏览器对象（原始方式）
     
     这是一个便捷函数，用于向后兼容。
     
     Args:
         port: 浏览器调试端口
+        host: 浏览器 CDP 调试端口主机
         
     Returns:
         Chromium: DrissionPage 浏览器对象
     """
-    logger.debug(f"获取浏览器对象：port={port}")
-    return Chromium(port)
+    logger.debug(f"获取浏览器对象：host={host}, port={port}")
+    return Chromium(BrowserSession._build_cdp_address(host, port))

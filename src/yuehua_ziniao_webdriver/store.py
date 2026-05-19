@@ -32,19 +32,28 @@ class StoreManager:
     def __init__(
         self,
         http_client: HttpClient,
-        user_info: Dict[str, str]
+        user_info: Dict[str, str],
+        cdp_host: str = "127.0.0.1",
+        cdp_proxy_host: Optional[str] = None,
     ) -> None:
         """初始化店铺管理器
         
         Args:
             http_client: HTTP 客户端
             user_info: 用户信息字典（company, username, password）
+            cdp_host: 店铺浏览器 CDP 调试端口主机
+            cdp_proxy_host: 对外暴露 CDP 调试端口的本机监听地址
         """
         self.http_client = http_client
         self.user_info = user_info
+        self.cdp_host = cdp_host
+        self.cdp_proxy_host = cdp_proxy_host
         self._store_list_cache: Optional[List[Store]] = None
         
-        logger.debug("初始化店铺管理器")
+        logger.debug(
+            f"初始化店铺管理器：cdp_host={cdp_host}, "
+            f"cdp_proxy_host={cdp_proxy_host}"
+        )
     
     def get_store_list(self, use_cache: bool = False) -> List[Store]:
         """获取店铺列表
@@ -222,6 +231,8 @@ class StoreManager:
                 port=debugging_port,
                 store_id=browser_oauth,
                 store_name=store_name,
+                host=self.cdp_host,
+                proxy_host=self.cdp_proxy_host,
                 ip_check_url=ip_check_url,
                 launcher_page=launcher_page,
                 close_callback=lambda sid: self.close_store(sid)
@@ -439,4 +450,7 @@ class StoreManager:
     
     def __repr__(self) -> str:
         cache_size = len(self._store_list_cache) if self._store_list_cache else 0
-        return f"StoreManager(cached_stores={cache_size})"
+        return (
+            f"StoreManager(cdp_host='{self.cdp_host}', "
+            f"cdp_proxy_host='{self.cdp_proxy_host}', cached_stores={cache_size})"
+        )

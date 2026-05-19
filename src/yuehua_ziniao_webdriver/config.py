@@ -5,9 +5,10 @@
 
 import json
 import os
+import shlex
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 from .types import VersionType, ConfigDict
 from .exceptions import ConfigurationError
@@ -22,6 +23,11 @@ class ZiniaoConfig:
     Attributes:
         client_path: 紫鸟客户端可执行文件路径（必需）
         socket_port: 客户端通信端口，默认 16851
+        host: SDK 连接紫鸟 WebDriver HTTP 服务的主机，默认 127.0.0.1
+        listen_ip: 紫鸟 WebDriver HTTP 服务监听地址（可选）
+        cdp_host: SDK 连接店铺 CDP 调试端口的主机，默认与 host 一致
+        cdp_proxy_host: 对外暴露 CDP 调试端口的本机监听地址（可选）
+        extra_args: 启动紫鸟客户端时追加的命令行参数
         company: 企业名称（用于登录）
         username: 用户名（用于登录）
         password: 密码（用于登录）
@@ -33,6 +39,11 @@ class ZiniaoConfig:
     
     client_path: str
     socket_port: int = 16851
+    host: str = "127.0.0.1"
+    listen_ip: Optional[str] = None
+    cdp_host: Optional[str] = None
+    cdp_proxy_host: Optional[str] = None
+    extra_args: List[str] = field(default_factory=list)
     company: str = ""
     username: str = ""
     password: str = ""
@@ -67,6 +78,30 @@ class ZiniaoConfig:
             raise ConfigurationError(
                 f"端口号必须在 1024-65535 之间，当前值：{self.socket_port}",
                 {"port": self.socket_port}
+            )
+
+        # 验证主机配置
+        if not self.host:
+            raise ConfigurationError("host 不能为空")
+
+        if self.cdp_host == "":
+            raise ConfigurationError("cdp_host 不能是空字符串")
+
+        if self.cdp_proxy_host == "":
+            raise ConfigurationError("cdp_proxy_host 不能是空字符串")
+
+        if self.listen_ip == "":
+            raise ConfigurationError("listen_ip 不能是空字符串")
+
+        # 验证额外启动参数
+        if self.extra_args is None:
+            self.extra_args = []
+        elif not isinstance(self.extra_args, list) or not all(
+            isinstance(arg, str) for arg in self.extra_args
+        ):
+            raise ConfigurationError(
+                "extra_args 必须是字符串列表",
+                {"extra_args": self.extra_args}
             )
         
         # 验证版本
@@ -173,6 +208,11 @@ class ZiniaoConfig:
         field_mapping = {
             "client_path": f"{prefix}CLIENT_PATH",
             "socket_port": f"{prefix}SOCKET_PORT",
+            "host": f"{prefix}HOST",
+            "listen_ip": f"{prefix}LISTEN_IP",
+            "cdp_host": f"{prefix}CDP_HOST",
+            "cdp_proxy_host": f"{prefix}CDP_PROXY_HOST",
+            "extra_args": f"{prefix}EXTRA_ARGS",
             "company": f"{prefix}COMPANY",
             "username": f"{prefix}USERNAME",
             "password": f"{prefix}PASSWORD",
@@ -195,6 +235,8 @@ class ZiniaoConfig:
                     config_dict[field_name] = int(env_value)
                 elif field_name == "retry_delay":
                     config_dict[field_name] = float(env_value)
+                elif field_name == "extra_args":
+                    config_dict[field_name] = shlex.split(env_value)
                 else:
                     config_dict[field_name] = env_value
         
@@ -257,6 +299,10 @@ class ZiniaoConfig:
             f"ZiniaoConfig("
             f"client_path='{self.client_path}', "
             f"socket_port={self.socket_port}, "
+            f"host='{self.host}', "
+            f"listen_ip='{self.listen_ip}', "
+            f"cdp_host='{self.cdp_host}', "
+            f"cdp_proxy_host='{self.cdp_proxy_host}', "
             f"company='{self.company}', "
             f"username='{self.username}', "
             f"password='***', "

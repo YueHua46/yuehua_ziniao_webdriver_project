@@ -26,7 +26,9 @@ class ProcessManager:
         self,
         client_path: str,
         socket_port: int,
-        version: VersionType = "v6"
+        version: VersionType = "v6",
+        listen_ip: Optional[str] = None,
+        extra_args: Optional[List[str]] = None,
     ) -> None:
         """初始化进程管理器
         
@@ -34,15 +36,20 @@ class ProcessManager:
             client_path: 客户端可执行文件路径
             socket_port: 通信端口
             version: 客户端版本
+            listen_ip: 客户端 WebDriver HTTP 服务监听地址
+            extra_args: 追加到启动命令末尾的参数
         """
         self.client_path = client_path
         self.socket_port = socket_port
         self.version = version
+        self.listen_ip = listen_ip
+        self.extra_args = extra_args or []
         self.process: Optional[subprocess.Popen] = None
         
         logger.debug(
             f"初始化进程管理器：client_path={client_path}, "
-            f"socket_port={socket_port}, version={version}"
+            f"socket_port={socket_port}, version={version}, "
+            f"listen_ip={listen_ip}, extra_args={self.extra_args}"
         )
     
     def kill_existing_process(self) -> bool:
@@ -114,8 +121,8 @@ class ProcessManager:
             # 启动进程
             self.process = subprocess.Popen(
                 cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
             )
             
             logger.info(f"客户端进程已启动，PID: {self.process.pid}")
@@ -126,15 +133,12 @@ class ProcessManager:
             
             # 检查进程是否仍在运行
             if self.process.poll() is not None:
-                # 进程已退出
-                stdout, stderr = self.process.communicate()
-                error_msg = (
-                    f"客户端启动后立即退出，退出码：{self.process.returncode}\n"
-                    f"stdout: {stdout.decode('utf-8', errors='ignore')}\n"
-                    f"stderr: {stderr.decode('utf-8', errors='ignore')}"
+                # Linux/macOS 上客户端启动器可能退出后留下真实浏览器进程。
+                # 后续 HTTP API 调用会验证服务是否真的可用。
+                logger.warning(
+                    f"客户端启动进程已退出，退出码：{self.process.returncode}，"
+                    "继续等待后续连接验证"
                 )
-                logger.error(error_msg)
-                raise BrowserStartError(error_msg)
             
             logger.info("客户端启动成功")
             
@@ -155,14 +159,19 @@ class ProcessManager:
             ProcessError: 不支持的平台
         """
         port_str = str(self.socket_port)
+        webdriver_args = [
+            '--run_type=web_driver',
+            '--ipc_type=http',
+            f'--port={port_str}'
+        ]
+
+        if self.listen_ip:
+            webdriver_args.append(f'--listen_ip={self.listen_ip}')
+
+        webdriver_args.extend(self.extra_args)
         
         if is_windows():
-            return [
-                self.client_path,
-                '--run_type=web_driver',
-                '--ipc_type=http',
-                f'--port={port_str}'
-            ]
+            return [self.client_path, *webdriver_args]
         
         elif is_mac():
             return [
@@ -170,18 +179,14 @@ class ProcessManager:
                 '-a',
                 self.client_path,
                 '--args',
-                '--run_type=web_driver',
-                '--ipc_type=http',
-                f'--port={port_str}'
+                *webdriver_args
             ]
         
         elif is_linux():
             return [
                 self.client_path,
                 '--no-sandbox',
-                '--run_type=web_driver',
-                '--ipc_type=http',
-                f'--port={port_str}'
+                *webdriver_args
             ]
         
         else:
@@ -250,5 +255,6 @@ class ProcessManager:
         return (
             f"ProcessManager(client_path='{self.client_path}', "
             f"socket_port={self.socket_port}, version='{self.version}', "
+            f"listen_ip='{self.listen_ip}', "
             f"running={self.is_running()})"
         )

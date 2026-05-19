@@ -66,6 +66,7 @@ class ZiniaoClient:
         # 初始化组件
         self.http_client = HttpClient(
             port=self.config.socket_port,
+            host=self.config.host,
             timeout=self.config.request_timeout,
             max_retries=self.config.max_retries,
             retry_delay=self.config.retry_delay
@@ -74,12 +75,16 @@ class ZiniaoClient:
         self.process_manager = ProcessManager(
             client_path=self.config.client_path,
             socket_port=self.config.socket_port,
-            version=self.config.version
+            version=self.config.version,
+            listen_ip=self.config.listen_ip,
+            extra_args=self.config.extra_args,
         )
         
         self.store_manager = StoreManager(
             http_client=self.http_client,
-            user_info=self.config.get_user_info()
+            user_info=self.config.get_user_info(),
+            cdp_host=self.config.cdp_host or self.config.host,
+            cdp_proxy_host=self.config.cdp_proxy_host,
         )
         
         self._started = False
