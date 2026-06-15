@@ -185,6 +185,15 @@ class StoreManager:
             "privacyMode": opts.get("privacyMode", 0),
         }
         data.update(self.user_info)
+
+        for key in (
+            "notPromptForDownload",
+            "forceDownloadPath",
+            "windowRatio",
+            "preSetting",
+        ):
+            if key in opts:
+                data[key] = opts[key]
         
         # 确定使用 browserId 还是 browserOauth
         if store_identifier.isdigit():

@@ -45,6 +45,8 @@ class BrowserStartResult(TypedDict, total=False):
     debuggingPort: int  # 调试端口
     browserOauth: str  # 店铺 OAuth 标识
     browserId: Optional[str]  # 店铺 ID
+    browserPath: str  # 允许的下载路径
+    downloadPath: str  # 实际文件下载路径
     ipDetectionPage: str  # IP 检测页面 URL
     launcherPage: str  # 启动页面 URL
     message: Optional[str]  # 错误消息
@@ -80,6 +82,10 @@ class HttpRequestData(TypedDict, total=False):
     isHeadless: Optional[int]
     isWebDriverReadOnlyMode: Optional[int]
     cookieTypeSave: Optional[int]
+    notPromptForDownload: Optional[int]
+    forceDownloadPath: Optional[str]
+    windowRatio: Optional[int]
+    preSetting: Optional[str]
     injectJsInfo: Optional[str]
 
 
@@ -132,6 +138,11 @@ class StoreOpenOptions(TypedDict, total=False):
         isWaitPluginUpdate: int — 是否等待插件更新，默认 0
         cookieTypeLoad: int — Cookie 加载类型，默认 0
         cookieTypeSave: int — Cookie 保存类型，默认 0
+        notPromptForDownload: int — 下载是否不弹窗，1=不弹窗 0=弹窗；
+            不传则跟随紫鸟版本/店铺内核默认行为
+        forceDownloadPath: str — 强制文件下载路径，需传绝对路径
+        windowRatio: int — 窗口比例，0-100，0=不控制，100=全屏
+        preSetting: str — 浏览器配置 JSON 字符串，如无图模式配置
         runMode: str — 运行模式，默认 "1"
         isLoadUserPlugin: bool — 是否加载用户插件，默认 False
         pluginIdType: int — 插件 ID 类型，默认 1
@@ -146,6 +157,10 @@ class StoreOpenOptions(TypedDict, total=False):
     isprivacy: int
     isHeadless: int
     cookieTypeSave: int
+    notPromptForDownload: int
+    forceDownloadPath: str
+    windowRatio: int
+    preSetting: str
     jsInfo: str
     isWaitPluginUpdate: int
     cookieTypeLoad: int

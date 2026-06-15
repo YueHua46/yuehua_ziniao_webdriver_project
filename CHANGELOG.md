@@ -9,6 +9,7 @@
 ### 新增
 
 - Windows V5 支持从常见默认安装位置自动探测 `starter.exe`，默认安装时可不传 `client_path`。
+- `StoreOpenOptions` 支持 `notPromptForDownload`、`forceDownloadPath`、`windowRatio` 和 `preSetting`，可控制 V6 下载弹窗、下载目录和浏览器预设。
 
 ### 变更
 

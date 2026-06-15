@@ -159,6 +159,21 @@ sessions = client.open_stores_by_names(
     ["店铺1", "店铺2", "店铺3"],
     max_workers=3
 )
+
+# 下载时弹出保存对话框
+session = client.open_store_by_name(
+    "店铺名称",
+    options={"notPromptForDownload": 0}
+)
+
+# 不弹窗并指定下载目录
+session = client.open_store_by_name(
+    "店铺名称",
+    options={
+        "notPromptForDownload": 1,
+        "forceDownloadPath": r"D:\downloads"
+    }
+)
 ```
 
 ### 4. 浏览器操作
@@ -304,6 +319,14 @@ setup_logging(
 - `open_store_by_name(store_name, exact_match=False, **options)` - 通过名称打开店铺
 - `open_stores_by_names(store_names, max_workers=3, exact_match=False, **options)` - 并发打开多个店铺
 - `close_store(store_id)` - 关闭店铺
+
+常用 `options`：
+
+- `isHeadless`：无头模式，`0=否`、`1=是`
+- `isWebDriverReadOnlyMode`：WebDriver 只读模式，`0=否`、`1=是`
+- `notPromptForDownload`：下载是否不弹窗，`1=不弹窗`、`0=弹窗`；不传则跟随紫鸟版本/店铺内核默认行为
+- `forceDownloadPath`：强制文件下载路径，需传绝对路径
+- `cookieTypeSave`：Cookie 保存类型，`0=默认`、`1=不提交`
 
 ### BrowserSession
 
