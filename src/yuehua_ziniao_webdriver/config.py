@@ -37,7 +37,7 @@ class ZiniaoConfig:
         retry_delay: 重试延迟时间（秒），默认 2.0
     """
     
-    client_path: str
+    client_path: str = ""
     socket_port: int = 16851
     host: str = "127.0.0.1"
     listen_ip: Optional[str] = None
@@ -62,9 +62,19 @@ class ZiniaoConfig:
         Raises:
             ConfigurationError: 当配置无效时
         """
+        # 先验证版本，V6 支持从默认安装位置自动查找启动程序。
+        if self.version not in ("v5", "v6"):
+            raise ConfigurationError(
+                f"version 必须是 'v5' 或 'v6'，当前值：{self.version}",
+                {"version": self.version}
+            )
+
         # 验证必需字段
-        if not self.client_path:
+        if not self.client_path and self.version != "v6":
             raise ConfigurationError("client_path 不能为空")
+
+        if self.version == "v6":
+            self.client_path = self._resolve_v6_client_path(self.client_path)
         
         # 验证客户端路径是否存在
         if not os.path.exists(self.client_path):
@@ -104,13 +114,6 @@ class ZiniaoConfig:
                 {"extra_args": self.extra_args}
             )
         
-        # 验证版本
-        if self.version not in ("v5", "v6"):
-            raise ConfigurationError(
-                f"version 必须是 'v5' 或 'v6'，当前值：{self.version}",
-                {"version": self.version}
-            )
-        
         # 验证超时时间
         if self.request_timeout <= 0:
             raise ConfigurationError(
@@ -132,6 +135,65 @@ class ZiniaoConfig:
                 {"delay": self.retry_delay}
             )
     
+    @classmethod
+    def _resolve_v6_client_path(cls, client_path: str) -> str:
+        """解析 V6 客户端路径。
+
+        Windows 下允许调用方留空或继续传旧路径；如果旧路径不存在，自动搜索
+        V6 常见默认安装位置，如 C:\\Program Files\\ziniao\\ziniao.exe。
+        """
+        if client_path and os.path.exists(client_path):
+            return client_path
+        if os.name != "nt":
+            return client_path
+
+        candidates = cls._windows_v6_client_path_candidates(client_path)
+        for candidate in candidates:
+            if os.path.exists(candidate):
+                return candidate
+
+        searched = "\n".join(f"- {candidate}" for candidate in candidates)
+        raise ConfigurationError(
+            "未找到紫鸟 V6 启动程序 ziniao.exe",
+            {"searched_paths": searched}
+        )
+
+    @staticmethod
+    def _windows_v6_client_path_candidates(client_path: str) -> List[str]:
+        candidates = [
+            client_path,
+            os.getenv("ZINIAO_CLIENT_PATH", ""),
+        ]
+        base_paths = [
+            os.getenv("ProgramFiles", r"C:\Program Files"),
+            os.getenv("ProgramFiles(x86)", r"C:\Program Files (x86)"),
+            os.getenv("LOCALAPPDATA", ""),
+            os.getenv("APPDATA", ""),
+        ]
+
+        for base in base_paths:
+            if not base:
+                continue
+            candidates.extend(
+                [
+                    str(Path(base) / "ziniao" / "ziniao.exe"),
+                    str(Path(base) / "ZiNiao" / "ziniao.exe"),
+                    str(Path(base) / "Programs" / "ziniao" / "ziniao.exe"),
+                ]
+            )
+
+        unique_candidates: List[str] = []
+        seen = set()
+        for candidate in candidates:
+            if not candidate:
+                continue
+            normalized = os.path.normcase(os.path.normpath(candidate))
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            unique_candidates.append(candidate)
+        return unique_candidates
+
     @classmethod
     def from_dict(cls, config_dict: ConfigDict) -> "ZiniaoConfig":
         """从字典创建配置对象

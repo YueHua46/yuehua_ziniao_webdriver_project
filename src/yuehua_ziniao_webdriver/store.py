@@ -246,7 +246,12 @@ class StoreManager:
             else:
                 logger.warning("ipDetectionPage 为空，请升级紫鸟浏览器到最新版，跳过 IP 检测")
             if launcher_page:
-                session.open_launcher_page()
+                session.open_launcher_page(
+                    close_extra_tabs=opts.get("closeExtraTabsAfterLauncherPage", True),
+                    cleanup_timeout=opts.get("tabCleanupTimeout", 45),
+                    quiet_seconds=opts.get("tabCleanupQuietSeconds", 8),
+                    poll_interval=opts.get("tabCleanupPollInterval", 0.5),
+                )
             else:
                 logger.warning("launcherPage 为空，无法打开店铺平台主页")
 

@@ -4,6 +4,18 @@
 
 本项目遵循[语义化版本](https://semver.org/lang/zh-CN/)规范。
 
+## [0.1.9] - 2026-06-15
+
+### 新增
+
+- `ZiniaoConfig` 支持 V6 客户端路径自动探测，Windows 下可从默认安装位置查找 `ziniao.exe`。
+- 打开店铺启动页后自动持续清理多余插件 Tab，支持延迟弹出的插件页场景。
+- `StoreOpenOptions` 新增多余 Tab 清理开关和轮询/稳定期参数。
+
+### 变更
+
+- Windows V6 进程清理覆盖 `ziniao.exe`、`ziniaobrowser.exe` 和店铺内核进程，减少残留进程影响。
+
 ## [0.1.8] - 2026-05-19
 
 ### 新增

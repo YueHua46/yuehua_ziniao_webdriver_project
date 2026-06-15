@@ -7,8 +7,10 @@ import time
 import logging
 import socket
 import threading
-from typing import Optional, Callable, Any, List
+from typing import Optional, Callable, Any, List, Dict
+from urllib.parse import quote
 
+import requests
 from DrissionPage import Chromium
 from DrissionPage.common import By
 
@@ -288,13 +290,21 @@ class BrowserSession:
     def open_launcher_page(
         self,
         launcher_page: Optional[str] = None,
-        wait_time: int = 6
+        wait_time: int = 6,
+        close_extra_tabs: bool = True,
+        cleanup_timeout: float = 45,
+        quiet_seconds: float = 8,
+        poll_interval: float = 0.5,
     ) -> None:
         """打开启动页面（店铺平台主页）
         
         Args:
             launcher_page: 启动页面 URL，如果为 None 则使用初始化时的 URL
             wait_time: 打开后等待时间（秒），默认 6
+            close_extra_tabs: 是否关闭启动页之外的多余标签页，默认 True
+            cleanup_timeout: 最长清理等待时间（秒），默认 45
+            quiet_seconds: 连续无多余标签页的稳定时间（秒），默认 8
+            poll_interval: 标签页轮询间隔（秒），默认 0.5
             
         Raises:
             ZiniaoError: 如果启动页面 URL 为空
@@ -310,12 +320,23 @@ class BrowserSession:
         
         try:
             logger.info(f"打开启动页面：{self.store_name} -> {url}")
-            
-            tab = self.get_tab()
-            tab.get(url)
-            
+
+            target_id = self._open_url_in_new_cdp_tab(url)
+            if not target_id:
+                tab = self.get_tab()
+                tab.get(url)
+
             time.sleep(wait_time)
-            
+
+            if close_extra_tabs:
+                self.close_extra_tabs(
+                    keep_tab_id=target_id,
+                    keep_url=url,
+                    cleanup_timeout=cleanup_timeout,
+                    quiet_seconds=quiet_seconds,
+                    poll_interval=poll_interval,
+                )
+
             logger.debug(f"启动页面已打开：{self.store_name}")
             
         except Exception as e:
@@ -325,6 +346,105 @@ class BrowserSession:
                 error_msg,
                 {"store_name": self.store_name, "url": url, "error": str(e)}
             )
+
+    def close_extra_tabs(
+        self,
+        keep_tab_id: Optional[str] = None,
+        keep_url: Optional[str] = None,
+        cleanup_timeout: float = 45,
+        quiet_seconds: float = 8,
+        poll_interval: float = 0.5,
+    ) -> None:
+        """关闭目标标签页之外的页面，持续等待到插件弹窗稳定消失。"""
+        if not keep_tab_id:
+            keep_tab_id = self._find_cdp_tab_id_by_url(keep_url) or self._active_cdp_tab_id()
+        if not keep_tab_id:
+            logger.warning("未找到需要保留的标签页，跳过多余 Tab 清理")
+            return
+
+        deadline = time.time() + cleanup_timeout
+        quiet_since: Optional[float] = None
+
+        while time.time() < deadline:
+            closed_count = 0
+            try:
+                tabs = self._list_cdp_tabs()
+                for tab in tabs:
+                    tab_id = tab.get("id")
+                    if tab.get("type") != "page" or not tab_id or tab_id == keep_tab_id:
+                        continue
+                    if self._close_cdp_tab(tab_id):
+                        closed_count += 1
+
+                self._activate_cdp_tab(keep_tab_id)
+            except (requests.RequestException, ValueError) as e:
+                logger.debug(f"清理多余 Tab 时 CDP 请求失败：{e}")
+                quiet_since = None
+                time.sleep(poll_interval)
+                continue
+
+            if closed_count:
+                logger.info(f"已关闭 {closed_count} 个多余 Tab，继续等待插件延迟弹窗")
+                quiet_since = None
+            else:
+                quiet_since = quiet_since or time.time()
+                if time.time() - quiet_since >= quiet_seconds:
+                    logger.debug("多余 Tab 清理完成，已进入稳定期")
+                    break
+
+            time.sleep(poll_interval)
+
+    def _cdp_base_url(self) -> str:
+        host = self.proxy_host or self.host
+        if ":" in host and not host.startswith("["):
+            host = f"[{host}]"
+        return f"http://{host}:{self.port}"
+
+    def _open_url_in_new_cdp_tab(self, url: str) -> Optional[str]:
+        try:
+            encoded_url = quote(url, safe="")
+            response = requests.put(f"{self._cdp_base_url()}/json/new?{encoded_url}", timeout=10)
+            if response.status_code == 405:
+                response = requests.get(f"{self._cdp_base_url()}/json/new?{encoded_url}", timeout=10)
+            response.raise_for_status()
+            tab_info = response.json()
+            tab_id = tab_info.get("id")
+            if tab_id:
+                self._activate_cdp_tab(tab_id)
+            return tab_id
+        except (requests.RequestException, ValueError) as e:
+            logger.debug(f"通过 CDP 新建启动页失败，将回退到 DrissionPage：{e}")
+            return None
+
+    def _list_cdp_tabs(self) -> List[Dict[str, Any]]:
+        response = requests.get(f"{self._cdp_base_url()}/json", timeout=5)
+        response.raise_for_status()
+        return response.json()
+
+    def _active_cdp_tab_id(self) -> Optional[str]:
+        tabs = self._list_cdp_tabs()
+        for tab in tabs:
+            if tab.get("type") == "page" and tab.get("webSocketDebuggerUrl"):
+                return tab.get("id")
+        return None
+
+    def _find_cdp_tab_id_by_url(self, url: Optional[str]) -> Optional[str]:
+        if not url:
+            return None
+        tabs = self._list_cdp_tabs()
+        for tab in tabs:
+            tab_url = str(tab.get("url") or "")
+            if tab.get("type") == "page" and tab_url.startswith(url):
+                return tab.get("id")
+        return None
+
+    def _close_cdp_tab(self, tab_id: str) -> bool:
+        response = requests.get(f"{self._cdp_base_url()}/json/close/{tab_id}", timeout=5)
+        return response.ok
+
+    def _activate_cdp_tab(self, tab_id: str) -> None:
+        response = requests.get(f"{self._cdp_base_url()}/json/activate/{tab_id}", timeout=5)
+        response.raise_for_status()
     
     def navigate(self, url: str, wait_time: float = 0) -> None:
         """导航到指定 URL

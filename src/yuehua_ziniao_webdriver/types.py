@@ -137,6 +137,10 @@ class StoreOpenOptions(TypedDict, total=False):
         pluginIdType: int — 插件 ID 类型，默认 1
         privacyMode: int — 隐私模式，默认 0
         jsInfo: str — 注入的 JS 信息，默认 ""
+        closeExtraTabsAfterLauncherPage: bool — 打开启动页后是否关闭多余插件 Tab，默认 True
+        tabCleanupTimeout: float — 多余 Tab 清理最长等待秒数，默认 45
+        tabCleanupQuietSeconds: float — 连续无多余 Tab 的稳定秒数，默认 8
+        tabCleanupPollInterval: float — 多余 Tab 轮询间隔秒数，默认 0.5
     """
     isWebDriverReadOnlyMode: int
     isprivacy: int
@@ -149,6 +153,10 @@ class StoreOpenOptions(TypedDict, total=False):
     isLoadUserPlugin: bool
     pluginIdType: int
     privacyMode: int
+    closeExtraTabsAfterLauncherPage: bool
+    tabCleanupTimeout: float
+    tabCleanupQuietSeconds: float
+    tabCleanupPollInterval: float
 
 
 # ============================================================================

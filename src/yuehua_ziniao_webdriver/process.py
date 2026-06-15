@@ -64,9 +64,17 @@ class ProcessManager:
         
         try:
             if is_windows():
-                process_name = self._get_windows_process_name()
-                logger.info(f"关闭 Windows 进程：{process_name}")
-                result = os.system(f'taskkill /f /t /im {process_name}')
+                process_names = self._get_windows_process_names()
+                logger.info(f"关闭 Windows 进程：{', '.join(process_names)}")
+                result = 0
+                for process_name in process_names:
+                    completed = subprocess.run(
+                        ["taskkill", "/f", "/t", "/im", process_name],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        check=False,
+                    )
+                    result = result or completed.returncode
                 time.sleep(3)
                 
                 if result != 0:
@@ -93,16 +101,15 @@ class ProcessManager:
             logger.error(error_msg)
             raise ProcessError(error_msg, {"error": str(e)})
     
-    def _get_windows_process_name(self) -> str:
-        """获取 Windows 平台的进程名称
+    def _get_windows_process_names(self) -> List[str]:
+        """获取 Windows 平台需要清理的进程名称
         
         Returns:
-            str: 进程名称
+            List[str]: 进程名称列表
         """
         if self.version == "v5":
-            return "SuperBrowser.exe"
-        else:
-            return "ziniao.exe"
+            return ["SuperBrowser.exe", "superbrowser.exe"]
+        return ["ziniao.exe", "ziniaobrowser.exe", "superbrowser.exe"]
     
     def start_browser(self, wait_time: int = 5) -> None:
         """启动紫鸟客户端
