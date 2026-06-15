@@ -165,6 +165,9 @@ class ZiniaoConfig:
             os.getenv("ZINIAO_CLIENT_PATH", ""),
         ]
         base_paths = [
+            r"C:\Program Files",
+            r"C:\Program Files (x86)",
+            os.getenv("ProgramW6432", ""),
             os.getenv("ProgramFiles", r"C:\Program Files"),
             os.getenv("ProgramFiles(x86)", r"C:\Program Files (x86)"),
             os.getenv("LOCALAPPDATA", ""),

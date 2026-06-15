@@ -4,6 +4,12 @@
 
 本项目遵循[语义化版本](https://semver.org/lang/zh-CN/)规范。
 
+## [0.1.10] - 2026-06-15
+
+### 修复
+
+- 修复部分 Windows/Python 环境下 `ProgramFiles` 指向 `C:\Program Files (x86)`，导致 V6 自动探测漏搜 `C:\Program Files\ziniao\ziniao.exe` 的问题。
+
 ## [0.1.9] - 2026-06-15
 
 ### 新增
