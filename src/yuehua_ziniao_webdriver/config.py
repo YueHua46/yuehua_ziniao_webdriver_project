@@ -21,7 +21,7 @@ class ZiniaoConfig:
     使用 dataclass 提供类型提示和默认值。
     
     Attributes:
-        client_path: 紫鸟客户端可执行文件路径（必需）
+        client_path: 紫鸟客户端可执行文件路径。Windows V5/V6 默认安装路径可留空自动探测
         socket_port: 客户端通信端口，默认 16851
         host: SDK 连接紫鸟 WebDriver HTTP 服务的主机，默认 127.0.0.1
         listen_ip: 紫鸟 WebDriver HTTP 服务监听地址（可选）
@@ -69,12 +69,13 @@ class ZiniaoConfig:
                 {"version": self.version}
             )
 
-        # 验证必需字段
-        if not self.client_path and self.version != "v6":
-            raise ConfigurationError("client_path 不能为空")
-
-        if self.version == "v6":
+        if self.version == "v5":
+            self.client_path = self._resolve_v5_client_path(self.client_path)
+        elif self.version == "v6":
             self.client_path = self._resolve_v6_client_path(self.client_path)
+
+        if not self.client_path:
+            raise ConfigurationError("client_path 不能为空")
         
         # 验证客户端路径是否存在
         if not os.path.exists(self.client_path):
@@ -136,6 +137,29 @@ class ZiniaoConfig:
             )
     
     @classmethod
+    def _resolve_v5_client_path(cls, client_path: str) -> str:
+        """解析 V5 客户端路径。
+
+        Windows 下允许调用方留空或继续传旧路径；如果旧路径不存在，自动搜索
+        V5 常见默认安装位置，如用户目录下的 SuperBrowser\\starter.exe。
+        """
+        if client_path and os.path.exists(client_path):
+            return client_path
+        if os.name != "nt":
+            return client_path
+
+        candidates = cls._windows_v5_client_path_candidates(client_path)
+        for candidate in candidates:
+            if os.path.exists(candidate):
+                return candidate
+
+        searched = "\n".join(f"- {candidate}" for candidate in candidates)
+        raise ConfigurationError(
+            "未找到紫鸟 V5 启动程序 starter.exe",
+            {"searched_paths": searched}
+        )
+
+    @classmethod
     def _resolve_v6_client_path(cls, client_path: str) -> str:
         """解析 V6 客户端路径。
 
@@ -157,6 +181,37 @@ class ZiniaoConfig:
             "未找到紫鸟 V6 启动程序 ziniao.exe",
             {"searched_paths": searched}
         )
+
+    @staticmethod
+    def _windows_v5_client_path_candidates(client_path: str) -> List[str]:
+        candidates = [
+            client_path,
+            os.getenv("ZINIAO_CLIENT_PATH", ""),
+        ]
+        base_paths = [
+            str(Path.home()),
+            os.getenv("USERPROFILE", ""),
+            r"C:\Program Files",
+            r"C:\Program Files (x86)",
+            os.getenv("ProgramW6432", ""),
+            os.getenv("ProgramFiles", r"C:\Program Files"),
+            os.getenv("ProgramFiles(x86)", r"C:\Program Files (x86)"),
+            os.getenv("LOCALAPPDATA", ""),
+            os.getenv("APPDATA", ""),
+        ]
+
+        for base in base_paths:
+            if not base:
+                continue
+            candidates.extend(
+                [
+                    str(Path(base) / "SuperBrowser" / "starter.exe"),
+                    str(Path(base) / "SuperBrowser" / "SuperBrowser.exe"),
+                    str(Path(base) / "Programs" / "SuperBrowser" / "starter.exe"),
+                ]
+            )
+
+        return ZiniaoConfig._unique_paths(candidates)
 
     @staticmethod
     def _windows_v6_client_path_candidates(client_path: str) -> List[str]:
@@ -185,6 +240,10 @@ class ZiniaoConfig:
                 ]
             )
 
+        return ZiniaoConfig._unique_paths(candidates)
+
+    @staticmethod
+    def _unique_paths(candidates: List[str]) -> List[str]:
         unique_candidates: List[str] = []
         seen = set()
         for candidate in candidates:
@@ -265,7 +324,7 @@ class ZiniaoConfig:
             ZiniaoConfig: 配置对象
             
         Raises:
-            ConfigurationError: 当必需的环境变量不存在时
+            ConfigurationError: 当配置无效时
         """
         config_dict: Dict[str, Any] = {}
         
@@ -304,13 +363,6 @@ class ZiniaoConfig:
                     config_dict[field_name] = shlex.split(env_value)
                 else:
                     config_dict[field_name] = env_value
-        
-        # 检查必需字段
-        if "client_path" not in config_dict:
-            raise ConfigurationError(
-                f"环境变量 {prefix}CLIENT_PATH 未设置",
-                {"required_env": f"{prefix}CLIENT_PATH"}
-            )
         
         return cls.from_dict(config_dict)  # type: ignore
     

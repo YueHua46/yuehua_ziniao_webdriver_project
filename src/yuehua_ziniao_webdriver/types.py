@@ -103,7 +103,7 @@ PlatformType = Literal["Windows", "Darwin", "Linux"]
 
 class ConfigDict(TypedDict, total=False):
     """配置字典"""
-    client_path: str  # 客户端路径（必需）
+    client_path: str  # 客户端路径（Windows 默认安装的 V5/V6 可留空自动探测）
     socket_port: int  # 通信端口
     host: str  # SDK 连接紫鸟 WebDriver HTTP 服务的主机
     listen_ip: Optional[str]  # 紫鸟 WebDriver HTTP 服务监听地址

@@ -4,6 +4,17 @@
 
 本项目遵循[语义化版本](https://semver.org/lang/zh-CN/)规范。
 
+## [0.1.11] - 2026-06-15
+
+### 新增
+
+- Windows V5 支持从常见默认安装位置自动探测 `starter.exe`，默认安装时可不传 `client_path`。
+
+### 变更
+
+- `ZiniaoConfig.from_env()` 不再强制要求 `ZINIAO_CLIENT_PATH`，允许 V5/V6 走默认路径自动探测。
+- README 和类型说明同步标记 `client_path` 为可选。
+
 ## [0.1.10] - 2026-06-15
 
 ### 修复

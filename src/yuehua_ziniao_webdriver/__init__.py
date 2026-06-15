@@ -20,7 +20,7 @@
     ...         tab.get("https://example.com")
 """
 
-__version__ = "0.1.10"
+__version__ = "0.1.11"
 __author__ = "Yuehua"
 __email__ = "shengxi_2000@outlook.com"
 
