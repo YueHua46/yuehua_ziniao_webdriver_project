@@ -2,7 +2,7 @@
 
 ## 🎯 项目概述
 
-本项目将原始的 `legacy script` 模块重构为一个标准的、可发布到 PyPI 的 Python SDK 包。
+本项目已重构为一个标准的、可发布到 PyPI 的 Python SDK 包。
 
 ## ✅ 已完成的工作
 
