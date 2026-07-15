@@ -66,7 +66,7 @@ class ProcessManager:
             if is_windows():
                 process_names = self._get_windows_process_names()
                 logger.info(f"关闭 Windows 进程：{', '.join(process_names)}")
-                result = 0
+                return_codes = {}
                 for process_name in process_names:
                     completed = subprocess.run(
                         ["taskkill", "/f", "/t", "/im", process_name],
@@ -74,11 +74,16 @@ class ProcessManager:
                         stderr=subprocess.DEVNULL,
                         check=False,
                     )
-                    result = result or completed.returncode
+                    return_codes[process_name] = completed.returncode
                 time.sleep(3)
-                
-                if result != 0:
-                    logger.warning(f"关闭进程返回非零状态码：{result}")
+
+                nonzero_codes = {
+                    name: code for name, code in return_codes.items() if code != 0
+                }
+                if nonzero_codes:
+                    # taskkill 在目标进程不存在或清理过程中恰好退出时会返回
+                    # 128/255；后续 HTTP API 就绪检查才是启动成功的依据。
+                    logger.debug("进程清理返回码：%s", nonzero_codes)
                 
             elif is_mac():
                 logger.info("关闭 macOS 进程：ziniao")
@@ -147,7 +152,7 @@ class ProcessManager:
                     "继续等待后续连接验证"
                 )
             
-            logger.info("客户端启动成功")
+            logger.info("客户端启动命令已执行，等待 HTTP API 就绪")
             
         except BrowserStartError:
             raise

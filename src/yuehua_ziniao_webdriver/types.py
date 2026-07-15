@@ -123,6 +123,10 @@ class ConfigDict(TypedDict, total=False):
     request_timeout: int  # 请求超时时间（秒）
     max_retries: int  # 最大重试次数
     retry_delay: float  # 重试延迟（秒）
+    startup_timeout: float  # 等待 HTTP JSON API 就绪的最长秒数
+    startup_poll_interval: float  # HTTP JSON API 就绪检查间隔秒数
+    startup_attempts: int  # HTTP JSON API 未就绪时的客户端启动次数
+    startup_restart_delay: float  # 内部重新启动前的冷却秒数
 
 
 # ============================================================================

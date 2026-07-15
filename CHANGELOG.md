@@ -4,6 +4,19 @@
 
 本项目遵循[语义化版本](https://semver.org/lang/zh-CN/)规范。
 
+## [0.1.16] - 2026-07-15
+
+### 新增
+
+- 新增紫鸟 HTTP JSON API 就绪检测：启动后用幂等的认证 `getBrowserList` 轮询，只有收到合法 JSON 和成功状态码才允许业务请求继续。
+- `ZiniaoConfig` 新增 `startup_timeout`、`startup_poll_interval`、`startup_attempts` 和 `startup_restart_delay`，支持配置启动等待及内部恢复策略。
+
+### 修复
+
+- 修复 V6 启动耗时不稳定时，固定等待 5 秒就发送首次业务请求，导致连接拒绝、空响应或 JSON 解析失败的问题。
+- HTTP API 首次未就绪时会在 SDK 内部清理、冷却并重新启动一次，避免把可恢复的启动时序异常交给业务层重跑。
+- Windows 进程不存在或清理时恰好退出产生的 `taskkill` 128/255 返回码降为调试日志，不再误报启动警告。
+
 ## [0.1.15] - 2026-07-15
 
 ### 修复

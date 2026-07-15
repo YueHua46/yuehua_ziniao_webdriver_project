@@ -35,6 +35,10 @@ class ZiniaoConfig:
         request_timeout: HTTP 请求超时时间（秒），默认 120
         max_retries: 失败重试次数，默认 3
         retry_delay: 重试延迟时间（秒），默认 2.0
+        startup_timeout: 等待 HTTP JSON API 就绪的最长秒数，默认 30
+        startup_poll_interval: HTTP JSON API 就绪检查间隔秒数，默认 0.5
+        startup_attempts: HTTP JSON API 未就绪时的客户端启动次数，默认 2
+        startup_restart_delay: 内部重新启动前的冷却秒数，默认 5
     """
     
     client_path: str = ""
@@ -51,6 +55,10 @@ class ZiniaoConfig:
     request_timeout: int = 120
     max_retries: int = 3
     retry_delay: float = 2.0
+    startup_timeout: float = 30.0
+    startup_poll_interval: float = 0.5
+    startup_attempts: int = 2
+    startup_restart_delay: float = 5.0
     
     def __post_init__(self) -> None:
         """初始化后的验证"""
@@ -134,6 +142,32 @@ class ZiniaoConfig:
             raise ConfigurationError(
                 f"retry_delay 不能为负数，当前值：{self.retry_delay}",
                 {"delay": self.retry_delay}
+            )
+
+        if self.startup_timeout <= 0:
+            raise ConfigurationError(
+                f"startup_timeout 必须大于 0，当前值：{self.startup_timeout}",
+                {"startup_timeout": self.startup_timeout},
+            )
+
+        if self.startup_poll_interval < 0:
+            raise ConfigurationError(
+                "startup_poll_interval 不能为负数，"
+                f"当前值：{self.startup_poll_interval}",
+                {"startup_poll_interval": self.startup_poll_interval},
+            )
+
+        if self.startup_attempts <= 0:
+            raise ConfigurationError(
+                f"startup_attempts 必须大于 0，当前值：{self.startup_attempts}",
+                {"startup_attempts": self.startup_attempts},
+            )
+
+        if self.startup_restart_delay < 0:
+            raise ConfigurationError(
+                "startup_restart_delay 不能为负数，"
+                f"当前值：{self.startup_restart_delay}",
+                {"startup_restart_delay": self.startup_restart_delay},
             )
     
     @classmethod
@@ -344,6 +378,10 @@ class ZiniaoConfig:
             "request_timeout": f"{prefix}REQUEST_TIMEOUT",
             "max_retries": f"{prefix}MAX_RETRIES",
             "retry_delay": f"{prefix}RETRY_DELAY",
+            "startup_timeout": f"{prefix}STARTUP_TIMEOUT",
+            "startup_poll_interval": f"{prefix}STARTUP_POLL_INTERVAL",
+            "startup_attempts": f"{prefix}STARTUP_ATTEMPTS",
+            "startup_restart_delay": f"{prefix}STARTUP_RESTART_DELAY",
         }
         
         # 从环境变量读取
@@ -355,9 +393,14 @@ class ZiniaoConfig:
                     config_dict[field_name] = int(env_value)
                 elif field_name == "request_timeout":
                     config_dict[field_name] = int(env_value)
-                elif field_name == "max_retries":
+                elif field_name in ("max_retries", "startup_attempts"):
                     config_dict[field_name] = int(env_value)
-                elif field_name == "retry_delay":
+                elif field_name in (
+                    "retry_delay",
+                    "startup_timeout",
+                    "startup_poll_interval",
+                    "startup_restart_delay",
+                ):
                     config_dict[field_name] = float(env_value)
                 elif field_name == "extra_args":
                     config_dict[field_name] = shlex.split(env_value)

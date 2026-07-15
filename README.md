@@ -301,6 +301,10 @@ setup_logging(
 | `request_timeout` | `int` | ❌ | `120` | 请求超时时间（秒） |
 | `max_retries` | `int` | ❌ | `3` | 最大重试次数 |
 | `retry_delay` | `float` | ❌ | `2.0` | 重试延迟（秒） |
+| `startup_timeout` | `float` | ❌ | `30.0` | 单次等待 HTTP JSON API 就绪的最长秒数 |
+| `startup_poll_interval` | `float` | ❌ | `0.5` | HTTP JSON API 就绪检查间隔秒数 |
+| `startup_attempts` | `int` | ❌ | `2` | API 未就绪时的客户端启动次数 |
+| `startup_restart_delay` | `float` | ❌ | `5.0` | 内部重新启动前的冷却秒数 |
 
 ## 📖 API 文档
 

@@ -6,6 +6,7 @@
 import json
 import logging
 import time
+import uuid
 from typing import Dict, Any, Optional
 
 import requests
@@ -226,6 +227,83 @@ class HttpClient:
         except Exception as e:
             logger.debug(f"连接测试失败：port={self.port}, error={e}")
             return False
+
+    def wait_until_ready(
+        self,
+        user_info: Dict[str, str],
+        timeout: float = 30,
+        poll_interval: float = 0.5,
+    ) -> HttpResponse:
+        """等待紫鸟 HTTP JSON API 完全就绪。
+
+        仅监听端口或启动器进程状态不足以表示 API 可用。这里使用幂等的
+        getBrowserList 请求，直到收到合法 JSON 和成功状态码。
+        """
+        if timeout <= 0:
+            raise ValueError("timeout 必须大于 0")
+        if poll_interval < 0:
+            raise ValueError("poll_interval 不能小于 0")
+
+        deadline = time.monotonic() + timeout
+        attempts = 0
+        last_error = "尚未发送请求"
+
+        while time.monotonic() < deadline:
+            attempts += 1
+            response = None
+            try:
+                data = {
+                    "action": "getBrowserList",
+                    "requestId": str(uuid.uuid4()),
+                }
+                data.update(user_info)
+                remaining = max(0.1, deadline - time.monotonic())
+                response = requests.post(
+                    self.base_url,
+                    data=json.dumps(data).encode("utf-8"),
+                    timeout=min(5.0, remaining),
+                )
+                response.encoding = "utf-8"
+                if not response.content:
+                    raise ValueError("HTTP 响应体为空")
+
+                result = response.json()
+                if not isinstance(result, dict):
+                    raise ValueError(f"响应不是 JSON 对象：{type(result).__name__}")
+
+                status_code = result.get("statusCode")
+                if status_code == 0:
+                    logger.info("紫鸟客户端 HTTP API 已就绪（尝试 %s 次）", attempts)
+                    return result  # type: ignore[return-value]
+                if status_code == -10003:
+                    error_msg = f"认证失败：{json.dumps(result, ensure_ascii=False)}"
+                    raise AuthenticationError(error_msg, result)
+                last_error = f"statusCode={status_code}, message={result.get('message')}"
+            except AuthenticationError:
+                raise
+            except (requests.RequestException, ValueError) as e:
+                last_error = f"{type(e).__name__}: {e}"
+                logger.debug("紫鸟 HTTP API 尚未就绪（第 %s 次）：%s", attempts, e)
+            finally:
+                if response is not None:
+                    response.close()
+
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            time.sleep(min(poll_interval, remaining))
+
+        error_msg = f"紫鸟客户端 HTTP API 在 {timeout} 秒内未就绪"
+        logger.warning("%s：%s", error_msg, last_error)
+        raise CommunicationError(
+            error_msg,
+            {
+                "host": self.host,
+                "port": self.port,
+                "attempts": attempts,
+                "last_error": last_error,
+            },
+        )
     
     def __repr__(self) -> str:
         return (

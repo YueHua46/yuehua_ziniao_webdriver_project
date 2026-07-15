@@ -19,7 +19,8 @@ from .exceptions import (
     ClientNotStartedError,
     UnsupportedVersionError,
     CoreUpdateError,
-    ConfigurationError
+    ConfigurationError,
+    BrowserStartError,
 )
 
 logger = logging.getLogger(__name__)
@@ -146,9 +147,51 @@ class ZiniaoClient:
             logger.info("用户取消启动")
             return
         
-        # 启动客户端
-        self.process_manager.start_browser(wait_time=wait_time)
-        
+        ready_result = None
+        last_start_error: Optional[Exception] = None
+        for startup_attempt in range(1, self.config.startup_attempts + 1):
+            if startup_attempt > 1:
+                logger.warning(
+                    "紫鸟 HTTP API 首次未就绪，冷却 %s 秒后内部重启（%s/%s）",
+                    self.config.startup_restart_delay,
+                    startup_attempt,
+                    self.config.startup_attempts,
+                )
+                self.process_manager.kill_existing_process()
+                time.sleep(self.config.startup_restart_delay)
+
+            # 启动客户端
+            self.process_manager.start_browser(wait_time=wait_time)
+
+            # V6 启动器可能已退出或仍在运行，但 HTTP API 还要数秒才真正可用。
+            # 使用认证后的幂等请求验证 JSON API，避免首次业务请求收到连接拒绝
+            # 或空响应。
+            try:
+                ready_result = self.http_client.wait_until_ready(
+                    self.config.get_user_info(),
+                    timeout=self.config.startup_timeout,
+                    poll_interval=self.config.startup_poll_interval,
+                )
+                break
+            except Exception as e:
+                last_start_error = e
+
+        if ready_result is None:
+            assert last_start_error is not None
+            raise BrowserStartError(
+                f"紫鸟客户端 HTTP API 启动失败：{last_start_error}",
+                {
+                    "host": self.config.host,
+                    "port": self.config.socket_port,
+                    "attempts": self.config.startup_attempts,
+                    "error": str(last_start_error),
+                },
+            ) from last_start_error
+
+        browser_list = ready_result.get("browserList")
+        if isinstance(browser_list, list):
+            self.store_manager._store_list_cache = browser_list
+
         self._started = True
         
         # 更新内核（如果需要）
