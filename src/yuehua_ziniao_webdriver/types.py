@@ -193,7 +193,12 @@ class BrowserSessionProtocol(Protocol):
         """获取当前标签页"""
         ...
 
-    def reconnect(self, timeout: float = 10, retry_interval: float = 0.5):
+    def reconnect(
+        self,
+        timeout: float = 10,
+        retry_interval: float = 0.5,
+        require_web_page: bool = True,
+    ):
         """重新连接浏览器并等待 CDP 页面通道稳定"""
         ...
     

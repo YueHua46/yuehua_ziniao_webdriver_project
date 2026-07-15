@@ -270,6 +270,7 @@ class StoreManager:
             session.reconnect(
                 timeout=float(opts.get("cdpReconnectTimeout", 10)),
                 retry_interval=float(opts.get("cdpReconnectInterval", 0.5)),
+                require_web_page=bool(launcher_page),
             )
 
             return session

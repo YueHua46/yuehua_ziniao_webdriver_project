@@ -27,4 +27,8 @@ def test_open_store_refreshes_browser_connection_before_returning() -> None:
 
     assert result is session
     session.open_launcher_page.assert_called_once()
-    session.reconnect.assert_called_once_with(timeout=6.0, retry_interval=0.25)
+    session.reconnect.assert_called_once_with(
+        timeout=6.0,
+        retry_interval=0.25,
+        require_web_page=True,
+    )

@@ -23,6 +23,19 @@ class DisconnectedPluginTab:
         raise RuntimeError("plugin page websocket disconnected")
 
 
+def test_session_initialization_does_not_require_web_page() -> None:
+    connected_browser = Mock(name="connected_browser")
+
+    with patch(
+        "yuehua_ziniao_webdriver.browser.Chromium",
+        return_value=connected_browser,
+    ):
+        session = BrowserSession(9222, "store-id", "test-store")
+
+    assert session.browser is connected_browser
+    connected_browser.get_tabs.assert_not_called()
+
+
 def test_reconnect_ignores_disconnected_plugin_tab() -> None:
     session = make_session()
     connected_browser = Mock(name="connected_browser")
@@ -43,6 +56,20 @@ def test_reconnect_ignores_disconnected_plugin_tab() -> None:
     assert session.browser is connected_browser
     chromium.assert_called_once_with(9222)
     sleep.assert_not_called()
+
+
+def test_reconnect_can_validate_browser_before_web_pages_are_opened() -> None:
+    session = make_session()
+    connected_browser = Mock(name="connected_browser")
+
+    with patch(
+        "yuehua_ziniao_webdriver.browser.Chromium",
+        return_value=connected_browser,
+    ):
+        result = session.reconnect(require_web_page=False)
+
+    assert result is connected_browser
+    connected_browser.get_tabs.assert_not_called()
 
 
 def test_reconnect_retries_until_http_page_is_available() -> None:

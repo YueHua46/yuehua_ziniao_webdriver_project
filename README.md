@@ -342,7 +342,7 @@ setup_logging(
 #### 方法
 
 - `get_tab(index=-1)` - 获取标签页
-- `reconnect(timeout=10, retry_interval=0.5)` - 丢弃旧对象并重新连接，等待 CDP 页面通道稳定
+- `reconnect(timeout=10, retry_interval=0.5, require_web_page=True)` - 丢弃旧对象并重新连接，可等待普通网页 CDP 通道稳定
 - `check_ip(ip_check_url=None, timeout=60)` - 检测 IP
 - `open_launcher_page(launcher_page=None, wait_time=6)` - 打开启动页面
 - `navigate(url, wait_time=0)` - 导航到 URL

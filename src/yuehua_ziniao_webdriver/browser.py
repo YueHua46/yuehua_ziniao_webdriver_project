@@ -177,13 +177,13 @@ class BrowserSession:
             f"host={host}, port={port}, store_id={store_id}"
         )
         
-        # 创建浏览器实例。新版紫鸟可能先开放 CDP HTTP 接口，页面 WebSocket
-        # 通道再延迟约 1-2 秒稳定，因此这里同时验证页面连接并短暂重试。
+        # 初始化阶段尚未打开 IP 检测页和平台主页，只验证浏览器级连接。
+        # 普通网页标签必须等启动流程完成后再验证，避免形成启动死锁。
         try:
             if proxy_host:
                 self._cdp_proxy = CdpTcpProxy(proxy_host, port, host, port)
                 self._cdp_proxy.start()
-            self.reconnect()
+            self.reconnect(require_web_page=False)
             logger.info(f"成功连接到浏览器：{store_name}")
         except Exception as e:
             if self._cdp_proxy is not None:
@@ -230,8 +230,9 @@ class BrowserSession:
         self,
         timeout: float = 10,
         retry_interval: float = 0.5,
+        require_web_page: bool = True,
     ) -> Chromium:
-        """丢弃旧对象并重新连接浏览器，等待 CDP 页面通道稳定。
+        """丢弃旧对象并重新连接浏览器，可等待普通网页通道稳定。
 
         紫鸟返回调试端口时，CDP HTTP 接口可能已经可用，但页面
         WebSocket 通道仍会短暂断开。本方法每次都会创建新的 Chromium
@@ -241,6 +242,8 @@ class BrowserSession:
         Args:
             timeout: 最长重连等待时间（秒），默认 10
             retry_interval: 重试间隔（秒），默认 0.5
+            require_web_page: 是否要求存在可访问的 HTTP(S) 网页标签。
+                初始化阶段应为 False，启动页打开后应为 True。
 
         Returns:
             Chromium: 新连接的浏览器对象
@@ -262,21 +265,22 @@ class BrowserSession:
         while True:
             try:
                 browser = Chromium(self._build_cdp_address(self.host, self.port))
-                # latest_tab 可能命中插件的 offscreen/background 标签，
-                # 新版紫鸟下这些标签可能永久断开。只用可访问的普通网页
-                # 标签验证页面通道，并忽略单个不可访问的插件标签。
-                http_tab_found = False
-                for tab in browser.get_tabs():
-                    try:
-                        url = tab.url or ""
-                    except Exception as e:
-                        logger.debug("忽略无法访问的非网页标签：%s", e)
-                        continue
-                    if url.startswith(("http://", "https://")):
-                        http_tab_found = True
-                        break
-                if not http_tab_found:
-                    raise RuntimeError("CDP 已连接，但尚未发现可访问的网页标签")
+                if require_web_page:
+                    # latest_tab 可能命中插件的 offscreen/background 标签，
+                    # 新版紫鸟下这些标签可能永久断开。只用可访问的普通网页
+                    # 标签验证页面通道，并忽略单个不可访问的插件标签。
+                    http_tab_found = False
+                    for tab in browser.get_tabs():
+                        try:
+                            url = tab.url or ""
+                        except Exception as e:
+                            logger.debug("忽略无法访问的非网页标签：%s", e)
+                            continue
+                        if url.startswith(("http://", "https://")):
+                            http_tab_found = True
+                            break
+                    if not http_tab_found:
+                        raise RuntimeError("CDP 已连接，但尚未发现可访问的网页标签")
                 self._browser = browser
                 logger.info(f"浏览器连接已刷新：{self.store_name}")
                 return browser
