@@ -17,13 +17,44 @@ def make_session() -> BrowserSession:
     return session
 
 
-def test_reconnect_discards_stale_browser_and_retries_page_connection() -> None:
+class DisconnectedPluginTab:
+    @property
+    def url(self) -> str:
+        raise RuntimeError("plugin page websocket disconnected")
+
+
+def test_reconnect_ignores_disconnected_plugin_tab() -> None:
     session = make_session()
     connected_browser = Mock(name="connected_browser")
+    connected_browser.get_tabs.return_value = [
+        DisconnectedPluginTab(),
+        Mock(url="chrome-extension://example/background.html"),
+        Mock(url="https://sellercentral.amazon.co.uk/home"),
+    ]
 
     with patch(
         "yuehua_ziniao_webdriver.browser.Chromium",
-        side_effect=[RuntimeError("page websocket disconnected"), connected_browser],
+        return_value=connected_browser,
+    ) as chromium:
+        with patch("yuehua_ziniao_webdriver.browser.time.sleep") as sleep:
+            result = session.reconnect(timeout=10, retry_interval=0.5)
+
+    assert result is connected_browser
+    assert session.browser is connected_browser
+    chromium.assert_called_once_with(9222)
+    sleep.assert_not_called()
+
+
+def test_reconnect_retries_until_http_page_is_available() -> None:
+    session = make_session()
+    waiting_browser = Mock(name="waiting_browser")
+    waiting_browser.get_tabs.return_value = [Mock(url="chrome://newtab/")]
+    connected_browser = Mock(name="connected_browser")
+    connected_browser.get_tabs.return_value = [Mock(url="https://example.test/")]
+
+    with patch(
+        "yuehua_ziniao_webdriver.browser.Chromium",
+        side_effect=[waiting_browser, connected_browser],
     ) as chromium:
         with patch("yuehua_ziniao_webdriver.browser.time.sleep") as sleep:
             result = session.reconnect(timeout=10, retry_interval=0.5)

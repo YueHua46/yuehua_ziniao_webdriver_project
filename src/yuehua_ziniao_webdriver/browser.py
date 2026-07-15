@@ -235,7 +235,8 @@ class BrowserSession:
 
         紫鸟返回调试端口时，CDP HTTP 接口可能已经可用，但页面
         WebSocket 通道仍会短暂断开。本方法每次都会创建新的 Chromium
-        对象，并通过读取最新标签页确认页面通道实际可用。
+        对象，并通过读取普通网页标签确认页面通道实际可用。插件的
+        offscreen/background 标签可能始终无法连接，不作为健康检查依据。
 
         Args:
             timeout: 最长重连等待时间（秒），默认 10
@@ -261,9 +262,21 @@ class BrowserSession:
         while True:
             try:
                 browser = Chromium(self._build_cdp_address(self.host, self.port))
-                # Chromium 构造成功只代表浏览器级 WebSocket 可用；读取页面
-                # 会进一步建立页面通道，能覆盖新版紫鸟的启动时序问题。
-                browser.latest_tab
+                # latest_tab 可能命中插件的 offscreen/background 标签，
+                # 新版紫鸟下这些标签可能永久断开。只用可访问的普通网页
+                # 标签验证页面通道，并忽略单个不可访问的插件标签。
+                http_tab_found = False
+                for tab in browser.get_tabs():
+                    try:
+                        url = tab.url or ""
+                    except Exception as e:
+                        logger.debug("忽略无法访问的非网页标签：%s", e)
+                        continue
+                    if url.startswith(("http://", "https://")):
+                        http_tab_found = True
+                        break
+                if not http_tab_found:
+                    raise RuntimeError("CDP 已连接，但尚未发现可访问的网页标签")
                 self._browser = browser
                 logger.info(f"浏览器连接已刷新：{self.store_name}")
                 return browser

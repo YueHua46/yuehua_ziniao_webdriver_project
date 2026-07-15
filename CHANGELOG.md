@@ -4,6 +4,13 @@
 
 本项目遵循[语义化版本](https://semver.org/lang/zh-CN/)规范。
 
+## [0.1.14] - 2026-07-15
+
+### 修复
+
+- 修复 `BrowserSession.reconnect()` 使用 `latest_tab` 时可能选中紫鸟插件的 offscreen/background 标签，从而把插件页面断开误判为整个浏览器 CDP 不可用的问题。
+- 重连健康检查改为通过 `get_tabs()` 查找可访问的 HTTP(S) 普通网页，并逐个忽略无法读取 URL 的插件标签。
+
 ## [0.1.13] - 2026-07-15
 
 ### 新增
