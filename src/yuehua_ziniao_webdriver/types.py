@@ -152,6 +152,8 @@ class StoreOpenOptions(TypedDict, total=False):
         tabCleanupTimeout: float — 多余 Tab 清理最长等待秒数，默认 45
         tabCleanupQuietSeconds: float — 连续无多余 Tab 的稳定秒数，默认 8
         tabCleanupPollInterval: float — 多余 Tab 轮询间隔秒数，默认 0.5
+        cdpReconnectTimeout: float — 返回会话前等待 CDP 页面通道稳定的最长秒数，默认 10
+        cdpReconnectInterval: float — CDP 页面通道重试间隔秒数，默认 0.5
     """
     isWebDriverReadOnlyMode: int
     isprivacy: int
@@ -172,6 +174,8 @@ class StoreOpenOptions(TypedDict, total=False):
     tabCleanupTimeout: float
     tabCleanupQuietSeconds: float
     tabCleanupPollInterval: float
+    cdpReconnectTimeout: float
+    cdpReconnectInterval: float
 
 
 # ============================================================================
@@ -187,6 +191,10 @@ class BrowserSessionProtocol(Protocol):
     
     def get_tab(self):
         """获取当前标签页"""
+        ...
+
+    def reconnect(self, timeout: float = 10, retry_interval: float = 0.5):
+        """重新连接浏览器并等待 CDP 页面通道稳定"""
         ...
     
     def close(self) -> None:

@@ -4,6 +4,17 @@
 
 本项目遵循[语义化版本](https://semver.org/lang/zh-CN/)规范。
 
+## [0.1.13] - 2026-07-15
+
+### 新增
+
+- `BrowserSession.reconnect()` 支持丢弃失效的 DrissionPage 对象，并重试到 CDP 页面 WebSocket 通道稳定。
+
+### 修复
+
+- 修复新版紫鸟返回调试端口后页面 CDP 通道短暂不稳定，导致 IP 检测阶段留下断开连接、后续继续使用失效 `Chromium` 对象的问题。
+- `open_store()` 返回会话前会自动重建并验证浏览器连接；可通过 `cdpReconnectTimeout` 和 `cdpReconnectInterval` 调整重试参数。
+
 ## [0.1.12] - 2026-06-15
 
 ### 新增

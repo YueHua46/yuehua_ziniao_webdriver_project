@@ -177,12 +177,13 @@ class BrowserSession:
             f"host={host}, port={port}, store_id={store_id}"
         )
         
-        # 创建浏览器实例
+        # 创建浏览器实例。新版紫鸟可能先开放 CDP HTTP 接口，页面 WebSocket
+        # 通道再延迟约 1-2 秒稳定，因此这里同时验证页面连接并短暂重试。
         try:
             if proxy_host:
                 self._cdp_proxy = CdpTcpProxy(proxy_host, port, host, port)
                 self._cdp_proxy.start()
-            self._browser = Chromium(self._build_cdp_address(host, port))
+            self.reconnect()
             logger.info(f"成功连接到浏览器：{store_name}")
         except Exception as e:
             if self._cdp_proxy is not None:
@@ -224,6 +225,72 @@ class BrowserSession:
             raise ZiniaoError("浏览器对象未初始化")
         
         return self._browser
+
+    def reconnect(
+        self,
+        timeout: float = 10,
+        retry_interval: float = 0.5,
+    ) -> Chromium:
+        """丢弃旧对象并重新连接浏览器，等待 CDP 页面通道稳定。
+
+        紫鸟返回调试端口时，CDP HTTP 接口可能已经可用，但页面
+        WebSocket 通道仍会短暂断开。本方法每次都会创建新的 Chromium
+        对象，并通过读取最新标签页确认页面通道实际可用。
+
+        Args:
+            timeout: 最长重连等待时间（秒），默认 10
+            retry_interval: 重试间隔（秒），默认 0.5
+
+        Returns:
+            Chromium: 新连接的浏览器对象
+
+        Raises:
+            ZiniaoError: 会话已关闭或在超时时间内无法建立稳定连接
+        """
+        if self._closed:
+            raise ZiniaoError("浏览器会话已关闭")
+        if timeout < 0:
+            raise ValueError("timeout 不能小于 0")
+        if retry_interval < 0:
+            raise ValueError("retry_interval 不能小于 0")
+
+        deadline = time.monotonic() + timeout
+        last_error: Optional[Exception] = None
+        self._browser = None
+
+        while True:
+            try:
+                browser = Chromium(self._build_cdp_address(self.host, self.port))
+                # Chromium 构造成功只代表浏览器级 WebSocket 可用；读取页面
+                # 会进一步建立页面通道，能覆盖新版紫鸟的启动时序问题。
+                browser.latest_tab
+                self._browser = browser
+                logger.info(f"浏览器连接已刷新：{self.store_name}")
+                return browser
+            except Exception as e:
+                last_error = e
+                self._browser = None
+                if time.monotonic() >= deadline:
+                    break
+                logger.debug(
+                    "CDP 页面通道尚未稳定，等待后重试：%s, 错误：%s",
+                    self.store_name,
+                    e,
+                )
+                remaining = max(0.0, deadline - time.monotonic())
+                time.sleep(min(retry_interval, remaining))
+
+        error_msg = f"重新连接浏览器失败：{last_error}"
+        logger.error("%s, store=%s", error_msg, self.store_name)
+        raise ZiniaoError(
+            error_msg,
+            {
+                "host": self.host,
+                "port": self.port,
+                "store_name": self.store_name,
+                "error": str(last_error),
+            },
+        )
     
     def get_tab(self, index: int = -1):
         """获取标签页

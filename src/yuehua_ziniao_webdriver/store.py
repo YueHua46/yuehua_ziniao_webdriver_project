@@ -264,6 +264,14 @@ class StoreManager:
             else:
                 logger.warning("launcherPage 为空，无法打开店铺平台主页")
 
+            # 启动阶段的 IP 检测可能正好撞上新版紫鸟 CDP 页面通道的
+            # 短暂不稳定窗口。返回会话前必须丢弃早期对象并重新附加，
+            # 避免调用方拿到已经断开的 Chromium 实例。
+            session.reconnect(
+                timeout=float(opts.get("cdpReconnectTimeout", 10)),
+                retry_interval=float(opts.get("cdpReconnectInterval", 0.5)),
+            )
+
             return session
             
         else:
