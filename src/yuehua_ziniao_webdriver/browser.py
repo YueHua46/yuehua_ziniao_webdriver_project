@@ -8,10 +8,12 @@ import logging
 import socket
 import threading
 from typing import Optional, Callable, Any, List, Dict
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 import requests
 from DrissionPage import Chromium
+from DrissionPage._base.driver import BrowserDriver
+from DrissionPage._pages.chromium_tab import ChromiumTab
 from DrissionPage.common import By
 
 from .exceptions import IPCheckError, ZiniaoError
@@ -169,6 +171,8 @@ class BrowserSession:
         self.launcher_page = launcher_page
         self.close_callback = close_callback
         self._browser: Optional[Chromium] = None
+        self._active_tab = None
+        self._preferred_target_id: Optional[str] = None
         self._cdp_proxy: Optional[CdpTcpProxy] = None
         self._closed = False
         
@@ -235,46 +239,103 @@ class BrowserSession:
         return self.get_tab()
 
     @staticmethod
-    def _discard_browser_reference(browser: Chromium) -> None:
-        """丢弃 Python 连接缓存，不关闭已经启动的真实浏览器。"""
-        registry = getattr(Chromium, "_BROWSERS", None)
-        browser_id = getattr(browser, "id", None)
-        if not isinstance(registry, dict) or not browser_id:
+    def _stop_driver(driver: Any) -> None:
+        if driver is None:
             return
-        lock = getattr(Chromium, "_lock", None)
-        if lock is None:
-            if registry.get(browser_id) is browser:
-                registry.pop(browser_id, None)
-            return
-        with lock:
-            if registry.get(browser_id) is browser:
-                registry.pop(browser_id, None)
+        try:
+            driver.stop()
+        except Exception as exc:
+            logger.debug("停止旧 DrissionPage driver 时忽略异常：%s", exc)
 
     @classmethod
-    def _discard_incomplete_cached_browser(cls, browser_id: Optional[str]) -> None:
-        """Remove this CDP browser's stale singleton after interrupted startup."""
+    def _clear_drissionpage_caches(
+        cls,
+        browser_id: Optional[str],
+        target_ids: List[str],
+    ) -> None:
+        """Stop stale drivers and clear all three DrissionPage registries."""
         if not browser_id:
             return
-        registry = getattr(Chromium, "_BROWSERS", None)
-        if not isinstance(registry, dict):
-            return
-        browser = registry.get(browser_id)
-        if (
-            browser is not None
-            and getattr(browser, "_created", False)
-            and not hasattr(browser, "_dl_mgr")
-        ):
-            cls._discard_browser_reference(browser)
+
+        browser_registry = getattr(Chromium, "_BROWSERS", {})
+        browser = browser_registry.get(browser_id)
+        if browser is not None:
+            # Prevent Driver.stop() callbacks from treating a reconnect as a
+            # request to close or dispose the real Ziniao browser process.
+            try:
+                browser._disconnect_flag = True
+            except Exception:
+                pass
+            drivers = [getattr(browser, "_driver", None)]
+            drivers.extend(getattr(browser, "_drivers", {}).values())
+            for values in getattr(browser, "_all_drivers", {}).values():
+                drivers.extend(values)
+            seen = set()
+            for driver in drivers:
+                if driver is not None and id(driver) not in seen:
+                    seen.add(id(driver))
+                    cls._stop_driver(driver)
+
+        tab_registry = getattr(ChromiumTab, "_TABS", {})
+        for target_id, tab in list(tab_registry.items()):
+            tab_browser = getattr(tab, "browser", getattr(tab, "_browser", None))
+            tab_browser_id = getattr(tab_browser, "id", None)
+            if target_id not in target_ids and tab_browser_id != browser_id:
+                continue
+            cls._stop_driver(getattr(tab, "_driver", None))
+            tab_registry.pop(target_id, None)
+
+        cls._stop_driver(getattr(BrowserDriver, "BROWSERS", {}).get(browser_id))
+        getattr(BrowserDriver, "BROWSERS", {}).pop(browser_id, None)
+
+        lock = getattr(Chromium, "_lock", None)
+        if lock is None:
+            browser_registry.pop(browser_id, None)
+        else:
+            with lock:
+                browser_registry.pop(browser_id, None)
 
     def _get_cdp_browser_id(self) -> Optional[str]:
         """Read the exact browser target ID without opening a WebSocket."""
-        response = requests.get(f"{self._cdp_base_url()}/json/version", timeout=5)
+        response = self._cdp_request("GET", "/json/version", timeout=5)
         response.raise_for_status()
         try:
             websocket_url = str(response.json().get("webSocketDebuggerUrl") or "")
             return websocket_url.rstrip("/").rsplit("/", 1)[-1] or None
         finally:
             response.close()
+
+    def _web_targets(self) -> List[Dict[str, Any]]:
+        """Read HTTP(S) page metadata without constructing any tab objects."""
+        targets: List[Dict[str, Any]] = []
+        for target in self._list_cdp_tabs():
+            url = str(target.get("url") or "")
+            if target.get("type") not in ("page", "webview"):
+                continue
+            if not target.get("id") or not target.get("webSocketDebuggerUrl"):
+                continue
+            if url.startswith(("http://", "https://")):
+                targets.append(target)
+        return targets
+
+    def _select_web_target(
+        self,
+        index: int = -1,
+        target_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        targets = self._web_targets()
+        if target_id:
+            for target in targets:
+                if target.get("id") == target_id:
+                    return target
+            raise RuntimeError(f"业务标签页已关闭或不可访问：{target_id}")
+        if not targets:
+            raise RuntimeError("CDP 已连接，但尚未发现可访问的网页标签")
+        if index == -1:
+            return targets[0]
+        if 0 <= index < len(targets):
+            return targets[index]
+        raise IndexError(f"标签页索引超出范围：{index}")
 
     def wait_for_web_page_target(
         self,
@@ -288,19 +349,12 @@ class BrowserSession:
         consecutive = 0
         while True:
             try:
-                found = False
-                for target in self._list_cdp_tabs():
-                    url = str(target.get("url") or "")
-                    if target.get("type") not in ("page", "webview"):
-                        continue
-                    if not target.get("webSocketDebuggerUrl"):
-                        continue
-                    if not url.startswith(("http://", "https://")):
-                        continue
-                    if url_prefix and not url.startswith(url_prefix):
-                        continue
-                    found = True
-                    break
+                targets = self._web_targets()
+                found = any(
+                    not url_prefix
+                    or str(target.get("url") or "").startswith(url_prefix)
+                    for target in targets
+                )
                 consecutive = consecutive + 1 if found else 0
                 if consecutive >= max(1, stable_polls):
                     return True
@@ -313,37 +367,16 @@ class BrowserSession:
             time.sleep(min(poll_interval, remaining))
 
     @staticmethod
-    def _get_web_tabs(browser: Chromium) -> List[Any]:
-        """Return accessible HTTP(S) tabs, ignoring stale extension targets."""
-        web_tabs: List[Any] = []
-        for tab in browser.get_tabs():
-            try:
-                url = tab.url or ""
-            except Exception as exc:
-                logger.debug("忽略无法访问的非网页标签：%s", exc)
-                continue
-            if url.startswith(("http://", "https://")):
-                web_tabs.append(tab)
-        return web_tabs
-
-    @classmethod
-    def _select_web_tab(cls, browser: Chromium, index: int = -1):
-        """Select an accessible business tab without touching ``latest_tab``."""
-        tabs = cls._get_web_tabs(browser)
-        if not tabs:
-            raise RuntimeError("CDP 已连接，但尚未发现可访问的网页标签")
-        if index == -1:
-            # DrissionPage get_tabs() follows tab_ids order, newest first.
-            return tabs[0]
-        if 0 <= index < len(tabs):
-            return tabs[index]
-        raise IndexError(f"标签页索引超出范围：{index}")
+    def _attach_target(browser: Chromium, target_id: str):
+        """Construct exactly one ChromiumTab selected from CDP /json metadata."""
+        return ChromiumTab(browser, target_id)
 
     def reconnect(
         self,
         timeout: float = 10,
         retry_interval: float = 0.5,
         require_web_page: bool = True,
+        target_id: Optional[str] = None,
     ) -> Chromium:
         """丢弃旧对象并重新连接浏览器，可等待普通网页通道稳定。
 
@@ -375,6 +408,7 @@ class BrowserSession:
         last_error: Optional[Exception] = None
         previous_browser = self._browser
         self._browser = None
+        self._active_tab = None
         address = self._build_cdp_address(self.host, self.port)
 
         if require_web_page and not self.wait_for_web_page_target(
@@ -389,15 +423,33 @@ class BrowserSession:
 
         while True:
             browser = None
+            browser_id = None
+            target_ids: List[str] = []
             try:
+                targets = self._list_cdp_tabs()
                 try:
                     browser_id = self._get_cdp_browser_id()
                 except (requests.RequestException, ValueError, TypeError):
                     browser_id = None
-                self._discard_incomplete_cached_browser(browser_id)
+                target_ids = [
+                    str(target.get("id"))
+                    for target in targets
+                    if target.get("id")
+                ]
+                self._clear_drissionpage_caches(browser_id, target_ids)
                 browser = Chromium(address)
                 if require_web_page:
-                    self._select_web_tab(browser)
+                    preferred_id = target_id or self._preferred_target_id
+                    try:
+                        selected = self._select_web_target(target_id=preferred_id)
+                    except RuntimeError:
+                        if target_id:
+                            raise
+                        self._preferred_target_id = None
+                        selected = self._select_web_target()
+                    self._active_tab = self._attach_target(
+                        browser, str(selected["id"])
+                    )
                 self._browser = browser
                 logger.info(f"浏览器连接已刷新：{self.store_name}")
                 return browser
@@ -405,7 +457,7 @@ class BrowserSession:
                 last_error = e
                 self._browser = None
                 if browser is not None:
-                    self._discard_browser_reference(browser)
+                    self._clear_drissionpage_caches(browser_id, target_ids)
                 if time.monotonic() >= deadline:
                     break
                 logger.debug(
@@ -441,7 +493,22 @@ class BrowserSession:
             可访问的 HTTP(S) 业务标签页对象
         """
         def select_tab(browser):
-            return self._select_web_tab(browser, index=index)
+            active_id = getattr(self._active_tab, "tab_id", None)
+            if index == -1 and active_id:
+                try:
+                    selected = self._select_web_target(target_id=active_id)
+                except RuntimeError:
+                    selected = self._select_web_target(index=index)
+            else:
+                selected = self._select_web_target(index=index)
+            target_id = str(selected["id"])
+            if (
+                self._active_tab is not None
+                and getattr(self._active_tab, "tab_id", None) == target_id
+            ):
+                return self._active_tab
+            self._active_tab = self._attach_target(browser, target_id)
+            return self._active_tab
 
         try:
             return select_tab(self.browser)
@@ -458,7 +525,7 @@ class BrowserSession:
                 retry_interval=0.5,
                 require_web_page=True,
             )
-            return select_tab(browser)
+            return self._active_tab or select_tab(browser)
     
     def check_ip(
         self,
@@ -483,16 +550,40 @@ class BrowserSession:
         
         try:
             logger.info(f"开始 IP 检测：{self.store_name}")
+            target_id = self._open_url_in_new_cdp_tab(url)
+            if not target_id:
+                logger.warning("创建 IP 检测 target 失败：%s", self.store_name)
+                return False
 
-            if not self.wait_for_web_page_target(
-                timeout=timeout,
+            scheme = urlparse(url).scheme.lower()
+            target_state = self._wait_for_target_state(
+                target_id,
+                timeout=min(float(timeout), 10.0),
                 poll_interval=0.5,
-            ):
+            )
+            if target_state == "closed":
+                logger.info("IP 检测 target 已自动关闭，检测流程完成：%s", self.store_name)
+                return True
+            if scheme == "chrome-extension":
+                if target_state == "stable":
+                    logger.info("紫鸟内部 IP 检测 target 已创建：%s", self.store_name)
+                    return True
+                logger.warning("紫鸟内部 IP 检测 target 未就绪：%s", self.store_name)
+                return False
+            if scheme not in ("http", "https"):
+                logger.warning("跳过不支持的 IP 检测 URL：%s", scheme)
+                return True
+            if target_state != "stable":
                 logger.warning("IP 检测页面尚未稳定：%s", self.store_name)
                 return False
-            
-            tab = self.get_tab()
-            tab.get(url)
+
+            browser = self.reconnect(
+                timeout=min(float(timeout), 10.0),
+                retry_interval=0.5,
+                require_web_page=True,
+                target_id=target_id,
+            )
+            tab = self._active_tab or self._attach_target(browser, target_id)
             
             # 等待成功按钮出现
             success_button = tab.ele(
@@ -508,6 +599,9 @@ class BrowserSession:
                 return False
                 
         except Exception as e:
+            if "target_id" in locals() and not self._target_exists(target_id):
+                logger.info("IP 检测 target 已自动关闭，检测流程完成：%s", self.store_name)
+                return True
             logger.warning(f"IP 检测暂不可用：{self.store_name}, 错误：{e}")
             return False
     
@@ -549,6 +643,8 @@ class BrowserSession:
             if not target_id:
                 tab = self.get_tab()
                 tab.get(url)
+            else:
+                self._preferred_target_id = target_id
 
             time.sleep(wait_time)
 
@@ -624,12 +720,38 @@ class BrowserSession:
             host = f"[{host}]"
         return f"http://{host}:{self.port}"
 
+    def _cdp_request(
+        self,
+        method: str,
+        path: str,
+        timeout: float,
+    ) -> requests.Response:
+        """Send a local CDP HTTP request without inheriting proxy settings."""
+        session = requests.Session()
+        session.trust_env = False
+        session.keep_alive = False
+        try:
+            return session.request(
+                method,
+                f"{self._cdp_base_url()}{path}",
+                timeout=timeout,
+                headers={"Connection": "close"},
+            )
+        finally:
+            session.close()
+
     def _open_url_in_new_cdp_tab(self, url: str) -> Optional[str]:
+        response = None
         try:
             encoded_url = quote(url, safe="")
-            response = requests.put(f"{self._cdp_base_url()}/json/new?{encoded_url}", timeout=10)
+            response = self._cdp_request(
+                "PUT", f"/json/new?{encoded_url}", timeout=10
+            )
             if response.status_code == 405:
-                response = requests.get(f"{self._cdp_base_url()}/json/new?{encoded_url}", timeout=10)
+                response.close()
+                response = self._cdp_request(
+                    "GET", f"/json/new?{encoded_url}", timeout=10
+                )
             response.raise_for_status()
             tab_info = response.json()
             tab_id = tab_info.get("id")
@@ -639,11 +761,17 @@ class BrowserSession:
         except (requests.RequestException, ValueError) as e:
             logger.debug(f"通过 CDP 新建启动页失败，将回退到 DrissionPage：{e}")
             return None
+        finally:
+            if response is not None:
+                response.close()
 
     def _list_cdp_tabs(self) -> List[Dict[str, Any]]:
-        response = requests.get(f"{self._cdp_base_url()}/json", timeout=5)
+        response = self._cdp_request("GET", "/json", timeout=5)
         response.raise_for_status()
-        return response.json()
+        try:
+            return response.json()
+        finally:
+            response.close()
 
     def _active_cdp_tab_id(self) -> Optional[str]:
         tabs = self._list_cdp_tabs()
@@ -662,13 +790,65 @@ class BrowserSession:
                 return tab.get("id")
         return None
 
+    def _target_exists(self, target_id: str) -> bool:
+        try:
+            return any(
+                target.get("id") == target_id
+                for target in self._list_cdp_tabs()
+            )
+        except (requests.RequestException, ValueError, TypeError):
+            return False
+
+    def _wait_for_target_state(
+        self,
+        target_id: str,
+        timeout: float,
+        poll_interval: float = 0.5,
+        stable_polls: int = 2,
+    ) -> str:
+        """Return ``stable``, ``closed``, or ``timeout`` for an exact target."""
+        deadline = time.monotonic() + max(0.0, timeout)
+        seen = False
+        consecutive = 0
+        while True:
+            try:
+                exists = any(
+                    target.get("id") == target_id
+                    for target in self._list_cdp_tabs()
+                )
+                if exists:
+                    seen = True
+                    consecutive += 1
+                    if consecutive >= max(1, stable_polls):
+                        return "stable"
+                elif seen:
+                    return "closed"
+                else:
+                    # /json/new already returned this exact ID. If it is gone
+                    # before the first poll, Ziniao completed and closed it.
+                    return "closed"
+            except (requests.RequestException, ValueError, TypeError):
+                consecutive = 0
+            if time.monotonic() >= deadline:
+                return "timeout"
+            remaining = max(0.0, deadline - time.monotonic())
+            time.sleep(min(poll_interval, remaining))
+
     def _close_cdp_tab(self, tab_id: str) -> bool:
-        response = requests.get(f"{self._cdp_base_url()}/json/close/{tab_id}", timeout=5)
-        return response.ok
+        response = self._cdp_request("GET", f"/json/close/{tab_id}", timeout=5)
+        try:
+            return response.ok
+        finally:
+            response.close()
 
     def _activate_cdp_tab(self, tab_id: str) -> None:
-        response = requests.get(f"{self._cdp_base_url()}/json/activate/{tab_id}", timeout=5)
-        response.raise_for_status()
+        response = self._cdp_request(
+            "GET", f"/json/activate/{tab_id}", timeout=5
+        )
+        try:
+            response.raise_for_status()
+        finally:
+            response.close()
     
     def navigate(self, url: str, wait_time: float = 0) -> None:
         """导航到指定 URL

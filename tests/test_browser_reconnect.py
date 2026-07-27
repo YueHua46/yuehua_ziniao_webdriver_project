@@ -3,8 +3,31 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from yuehua_ziniao_webdriver.browser import BrowserSession
+from yuehua_ziniao_webdriver.browser import (
+    BrowserDriver,
+    BrowserSession,
+    Chromium,
+    ChromiumTab,
+)
 from yuehua_ziniao_webdriver.exceptions import ZiniaoError
+
+
+def web_target(target_id="business", url="https://sellercentral.amazon.com/home"):
+    return {
+        "id": target_id,
+        "type": "page",
+        "url": url,
+        "webSocketDebuggerUrl": f"ws://page/{target_id}",
+    }
+
+
+def extension_target(target_id="plugin"):
+    return {
+        "id": target_id,
+        "type": "page",
+        "url": "chrome-extension://example/background.html",
+        "webSocketDebuggerUrl": f"ws://page/{target_id}",
+    }
 
 
 def make_session() -> BrowserSession:
@@ -15,20 +38,15 @@ def make_session() -> BrowserSession:
     session.store_id = "store-id"
     session.store_name = "test-store"
     session._browser = Mock(name="stale_browser")
+    session._active_tab = None
+    session._preferred_target_id = None
     session._closed = False
     session._get_cdp_browser_id = Mock(return_value="browser-id")
+    session._list_cdp_tabs = Mock(
+        return_value=[extension_target(), web_target()]
+    )
+    session._clear_drissionpage_caches = Mock()
     return session
-
-
-class DisconnectedPluginTab:
-    @property
-    def url(self) -> str:
-        raise RuntimeError("plugin page websocket disconnected")
-
-
-class DisconnectedBrowser:
-    def get_tabs(self):
-        raise RuntimeError("page channel disconnected")
 
 
 def test_session_initialization_is_lazy() -> None:
@@ -39,66 +57,58 @@ def test_session_initialization_is_lazy() -> None:
     chromium.assert_not_called()
 
 
-def test_reconnect_ignores_disconnected_plugin_tab() -> None:
+def test_reconnect_selects_one_json_target_without_get_tabs() -> None:
     session = make_session()
-    connected_browser = Mock(name="connected_browser")
-    connected_browser.get_tabs.return_value = [
-        DisconnectedPluginTab(),
-        Mock(url="chrome-extension://example/background.html"),
-        Mock(url="https://sellercentral.amazon.co.uk/home"),
-    ]
+    browser = Mock(name="browser")
+    browser.get_tabs.side_effect = AssertionError("get_tabs must not be called")
+    tab = Mock(name="business_tab", tab_id="business")
+
+    with patch("yuehua_ziniao_webdriver.browser.Chromium", return_value=browser):
+        with patch(
+            "yuehua_ziniao_webdriver.browser.ChromiumTab", return_value=tab
+        ) as chromium_tab:
+            with patch.object(
+                session, "wait_for_web_page_target", return_value=True
+            ):
+                result = session.reconnect()
+
+    assert result is browser
+    assert session._active_tab is tab
+    chromium_tab.assert_called_once_with(browser, "business")
+    browser.get_tabs.assert_not_called()
+
+
+def test_reconnect_without_web_page_does_not_construct_tab() -> None:
+    session = make_session()
+    browser = Mock(name="browser")
+
+    with patch("yuehua_ziniao_webdriver.browser.Chromium", return_value=browser):
+        with patch("yuehua_ziniao_webdriver.browser.ChromiumTab") as chromium_tab:
+            assert session.reconnect(require_web_page=False) is browser
+
+    chromium_tab.assert_not_called()
+
+
+def test_reconnect_retries_interrupted_chromium_constructor() -> None:
+    session = make_session()
+    browser = Mock(name="browser")
+    tab = Mock(name="tab", tab_id="business")
 
     with patch(
         "yuehua_ziniao_webdriver.browser.Chromium",
-        return_value=connected_browser,
+        side_effect=[RuntimeError("websocket disconnected"), browser],
     ) as chromium:
-        with patch.object(session, "wait_for_web_page_target", return_value=True):
-            with patch("yuehua_ziniao_webdriver.browser.time.sleep") as sleep:
-                result = session.reconnect(timeout=10, retry_interval=0.5)
+        with patch(
+            "yuehua_ziniao_webdriver.browser.ChromiumTab", return_value=tab
+        ):
+            with patch.object(
+                session, "wait_for_web_page_target", return_value=True
+            ):
+                with patch("yuehua_ziniao_webdriver.browser.time.sleep"):
+                    assert session.reconnect(timeout=1, retry_interval=0.01) is browser
 
-    assert result is connected_browser
-    assert session.browser is connected_browser
-    chromium.assert_called_once_with(9222)
-    sleep.assert_not_called()
-
-
-def test_reconnect_can_validate_browser_before_web_pages_are_opened() -> None:
-    session = make_session()
-    connected_browser = Mock(name="connected_browser")
-
-    with patch(
-        "yuehua_ziniao_webdriver.browser.Chromium",
-        return_value=connected_browser,
-    ):
-        result = session.reconnect(require_web_page=False)
-
-    assert result is connected_browser
-    connected_browser.get_tabs.assert_not_called()
-
-
-def test_reconnect_retries_until_http_page_is_available() -> None:
-    session = make_session()
-    waiting_browser = Mock(name="waiting_browser")
-    waiting_browser.get_tabs.return_value = [Mock(url="chrome://newtab/")]
-    connected_browser = Mock(name="connected_browser")
-    connected_browser.get_tabs.return_value = [Mock(url="https://example.test/")]
-
-    with patch(
-        "yuehua_ziniao_webdriver.browser.Chromium",
-        side_effect=[waiting_browser, connected_browser],
-    ) as chromium:
-        with patch("yuehua_ziniao_webdriver.browser.time.sleep") as sleep:
-            with patch.object(session, "wait_for_web_page_target", return_value=True):
-                with patch.object(
-                    BrowserSession, "_discard_browser_reference"
-                ) as discard:
-                    result = session.reconnect(timeout=10, retry_interval=0.5)
-
-    assert result is connected_browser
-    assert session.browser is connected_browser
     assert chromium.call_count == 2
-    discard.assert_called_once_with(waiting_browser)
-    sleep.assert_called_once_with(0.5)
+    assert session._clear_drissionpage_caches.call_count >= 2
 
 
 def test_reconnect_raises_when_session_is_closed() -> None:
@@ -109,83 +119,80 @@ def test_reconnect_raises_when_session_is_closed() -> None:
         session.reconnect()
 
 
-def test_page_property_reuses_current_session_tab() -> None:
+def test_get_tab_filters_json_before_constructing_one_tab() -> None:
     session = make_session()
-    tab = Mock(name="business_tab")
-    session._browser.get_tabs.return_value = [
-        DisconnectedPluginTab(),
-        Mock(url="chrome-extension://example/background.html"),
-        tab,
-    ]
-    tab.url = "https://sellercentral.amazon.com/home"
-
-    assert session.page is tab
-
-
-def test_get_tab_skips_disconnected_latest_plugin_tab() -> None:
-    session = make_session()
-    business_tab = Mock(url="https://sellercentral.amazon.co.jp/home")
-    session._browser.get_tabs.return_value = [
-        DisconnectedPluginTab(),
-        Mock(url="chrome-extension://example/background.html"),
-        business_tab,
-    ]
-
-    assert session.get_tab() is business_tab
-    session._browser.get_tabs.assert_called_once_with()
-
-
-def test_only_current_incomplete_drissionpage_browser_is_discarded() -> None:
-    incomplete = SimpleNamespace(
-        id="browser-id",
-        _created=True,
-    )
-    other = SimpleNamespace(id="other-browser", _created=True)
-    fake_chromium = SimpleNamespace(
-        _BROWSERS={"browser-id": incomplete, "other-browser": other}
-    )
-
-    with patch("yuehua_ziniao_webdriver.browser.Chromium", fake_chromium):
-        BrowserSession._discard_incomplete_cached_browser("browser-id")
-
-    assert fake_chromium._BROWSERS == {"other-browser": other}
-
-
-def test_reconnect_retries_after_interrupted_drissionpage_constructor() -> None:
-    session = make_session()
-    ready = Mock(name="ready_browser")
+    tab = Mock(name="business_tab", tab_id="business")
 
     with patch(
-        "yuehua_ziniao_webdriver.browser.Chromium",
-        side_effect=[RuntimeError("page websocket disconnected"), ready],
-    ) as chromium:
-        with patch.object(
-            BrowserSession,
-            "_discard_incomplete_cached_browser",
-        ) as discard:
-            with patch("yuehua_ziniao_webdriver.browser.time.sleep"):
-                result = session.reconnect(
-                    timeout=1,
-                    retry_interval=0.01,
-                    require_web_page=False,
-                )
+        "yuehua_ziniao_webdriver.browser.ChromiumTab", return_value=tab
+    ) as chromium_tab:
+        assert session.get_tab() is tab
 
-    assert result is ready
-    assert session.browser is ready
-    assert chromium.call_count == 2
-    assert discard.call_count == 2
-    discard.assert_called_with("browser-id")
+    chromium_tab.assert_called_once_with(session._browser, "business")
 
 
-def test_wait_for_web_page_target_requires_stable_http_target() -> None:
+def test_get_tab_lazily_reconnects_after_json_failure() -> None:
     session = make_session()
-    session._list_cdp_tabs = Mock(
-        side_effect=[
-            [{"type": "page", "url": "chrome-extension://plugin", "webSocketDebuggerUrl": "ws://plugin"}],
-            [{"type": "page", "url": "https://example.test/", "webSocketDebuggerUrl": "ws://page"}],
-            [{"type": "page", "url": "https://example.test/", "webSocketDebuggerUrl": "ws://page"}],
-        ]
+    browser = Mock(name="recovered_browser")
+    tab = Mock(name="recovered_tab", tab_id="business")
+    session._select_web_target = Mock(
+        side_effect=[RuntimeError("temporary /json failure"), web_target()]
     )
+    session.reconnect = Mock(return_value=browser)
+
+    with patch(
+        "yuehua_ziniao_webdriver.browser.ChromiumTab", return_value=tab
+    ):
+        assert session.get_tab() is tab
+
+    session.reconnect.assert_called_once_with(
+        timeout=10,
+        retry_interval=0.5,
+        require_web_page=True,
+    )
+
+
+def test_reconnect_clears_all_three_caches_without_quitting_browser() -> None:
+    browser_driver = Mock(name="browser_driver")
+    page_driver = Mock(name="page_driver")
+    browser = SimpleNamespace(
+        id="browser-id",
+        _driver=browser_driver,
+        _drivers={"business": page_driver},
+        _all_drivers={"business": {page_driver}},
+        _disconnect_flag=False,
+    )
+    tab = SimpleNamespace(_browser=browser, _driver=page_driver)
+    other_browser = SimpleNamespace(id="other-browser")
+    other_tab = SimpleNamespace(_browser=other_browser, _driver=Mock())
+
+    with patch.object(Chromium, "_BROWSERS", {"browser-id": browser}):
+        with patch.object(BrowserDriver, "BROWSERS", {"browser-id": browser_driver}):
+            with patch.object(
+                ChromiumTab,
+                "_TABS",
+                {"business": tab, "other": other_tab},
+            ):
+                BrowserSession._clear_drissionpage_caches(
+                    "browser-id", ["business"]
+                )
+                assert Chromium._BROWSERS == {}
+                assert BrowserDriver.BROWSERS == {}
+                assert ChromiumTab._TABS == {"other": other_tab}
+
+    assert browser._disconnect_flag is True
+    browser_driver.stop.assert_called()
+    page_driver.stop.assert_called()
+    assert not hasattr(browser, "quit")
+
+
+def test_wait_for_web_target_uses_json_metadata_only() -> None:
+    session = make_session()
+    session._list_cdp_tabs.side_effect = [
+        [extension_target()],
+        [extension_target(), web_target()],
+        [extension_target(), web_target()],
+    ]
 
     with patch("yuehua_ziniao_webdriver.browser.time.sleep"):
         assert session.wait_for_web_page_target(timeout=1, poll_interval=0.01)
@@ -193,18 +200,47 @@ def test_wait_for_web_page_target_requires_stable_http_target() -> None:
     assert session._list_cdp_tabs.call_count == 3
 
 
-def test_get_tab_lazily_reconnects_a_disconnected_session() -> None:
+def test_extension_ip_check_never_attaches_drissionpage() -> None:
     session = make_session()
-    session._browser = DisconnectedBrowser()
-    page = Mock(name="recovered_page")
-    page.url = "https://sellercentral.amazon.com/home"
-    recovered_browser = Mock()
-    recovered_browser.get_tabs.return_value = [page]
-    session.reconnect = Mock(return_value=recovered_browser)
+    session.ip_check_url = "chrome-extension://ziniao/ip-check.html"
+    session._open_url_in_new_cdp_tab = Mock(return_value="ip-target")
+    session._wait_for_target_state = Mock(return_value="stable")
+    session.reconnect = Mock()
 
-    assert session.get_tab() is page
+    assert session.check_ip()
+    session.reconnect.assert_not_called()
+
+
+def test_http_ip_check_attaches_exact_created_target() -> None:
+    session = make_session()
+    session.ip_check_url = "https://check.example.test/ip"
+    session._open_url_in_new_cdp_tab = Mock(return_value="ip-target")
+    session._wait_for_target_state = Mock(return_value="stable")
+    tab = Mock(name="ip_tab")
+    tab.ele.return_value = Mock(name="success_button")
+    browser = Mock(name="browser")
+
+    def reconnect(**kwargs):
+        session._active_tab = tab
+        return browser
+
+    session.reconnect = Mock(side_effect=reconnect)
+
+    assert session.check_ip()
     session.reconnect.assert_called_once_with(
-        timeout=10,
+        timeout=10.0,
         retry_interval=0.5,
         require_web_page=True,
+        target_id="ip-target",
     )
+
+
+def test_auto_closed_ip_target_is_success() -> None:
+    session = make_session()
+    session.ip_check_url = "https://check.example.test/ip"
+    session._open_url_in_new_cdp_tab = Mock(return_value="ip-target")
+    session._wait_for_target_state = Mock(return_value="closed")
+    session.reconnect = Mock()
+
+    assert session.check_ip()
+    session.reconnect.assert_not_called()
