@@ -226,6 +226,46 @@ class BrowserSession:
         
         return self._browser
 
+    @property
+    def page(self):
+        """获取已验证的当前业务标签页。
+
+        调用方应复用此对象，不要再使用调试端口构造 ChromiumPage。
+        """
+        return self.get_tab()
+
+    @staticmethod
+    def _discard_incomplete_browser(browser: Chromium) -> None:
+        """清理损坏的 DrissionPage 单例，使重连能够重新创建对象。"""
+        registry = getattr(Chromium, "_BROWSERS", None)
+        browser_id = getattr(browser, "id", None)
+        if not isinstance(registry, dict) or not browser_id:
+            return
+        lock = getattr(Chromium, "_lock", None)
+        if lock is None:
+            if registry.get(browser_id) is browser:
+                registry.pop(browser_id, None)
+            return
+        with lock:
+            if registry.get(browser_id) is browser:
+                registry.pop(browser_id, None)
+
+    @classmethod
+    def _ensure_browser_initialized(
+        cls,
+        browser: Chromium,
+        timeout: float,
+    ) -> None:
+        """等待 DrissionPage 完成浏览器级服务初始化。"""
+        deadline = time.monotonic() + max(0.0, timeout)
+        while not hasattr(browser, "_dl_mgr"):
+            if time.monotonic() >= deadline:
+                cls._discard_incomplete_browser(browser)
+                raise RuntimeError(
+                    "DrissionPage 浏览器对象初始化不完整：缺少 _dl_mgr，已清理缓存并准备重连"
+                )
+            time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
+
     def reconnect(
         self,
         timeout: float = 10,
@@ -265,6 +305,9 @@ class BrowserSession:
         while True:
             try:
                 browser = Chromium(self._build_cdp_address(self.host, self.port))
+                remaining = max(0.0, deadline - time.monotonic())
+                initialization_timeout = min(0.5, remaining / 2)
+                self._ensure_browser_initialized(browser, initialization_timeout)
                 if require_web_page:
                     # latest_tab 可能命中插件的 offscreen/background 标签，
                     # 新版紫鸟下这些标签可能永久断开。只用可访问的普通网页

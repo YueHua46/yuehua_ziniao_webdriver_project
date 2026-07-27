@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import pytest
@@ -98,3 +99,48 @@ def test_reconnect_raises_when_session_is_closed() -> None:
 
     with pytest.raises(ZiniaoError, match="浏览器会话已关闭"):
         session.reconnect()
+
+
+def test_page_property_reuses_current_session_tab() -> None:
+    session = make_session()
+    tab = Mock(name="business_tab")
+    session._browser.latest_tab = tab
+
+    assert session.page is tab
+
+
+def test_incomplete_drissionpage_browser_is_discarded() -> None:
+    browser = Mock(spec=[])
+
+    with patch.object(
+        BrowserSession,
+        "_discard_incomplete_browser",
+    ) as discard:
+        with pytest.raises(RuntimeError, match="缺少 _dl_mgr"):
+            BrowserSession._ensure_browser_initialized(browser, timeout=0)
+
+    discard.assert_called_once_with(browser)
+
+
+def test_reconnect_retries_after_incomplete_drissionpage_browser() -> None:
+    session = make_session()
+    incomplete = Mock(spec=[])
+    ready = SimpleNamespace(_dl_mgr=Mock())
+
+    with patch(
+        "yuehua_ziniao_webdriver.browser.Chromium",
+        side_effect=[incomplete, ready],
+    ) as chromium:
+        with patch.object(
+            BrowserSession,
+            "_discard_incomplete_browser",
+        ):
+            result = session.reconnect(
+                timeout=1,
+                retry_interval=0,
+                require_web_page=False,
+            )
+
+    assert result is ready
+    assert session.browser is ready
+    assert chromium.call_count == 2

@@ -4,6 +4,17 @@
 
 本项目遵循[语义化版本](https://semver.org/lang/zh-CN/)规范。
 
+## [0.1.18] - 2026-07-27
+
+### 新增
+
+- BrowserSession.page 提供已完成 SDK 健康检查的当前业务标签页，业务项目无需再按 CDP 端口重复构造 ChromiumPage。
+
+### 修复
+
+- BrowserSession.reconnect() 现在会等待 DrissionPage 浏览器级服务完成初始化。
+- 检测到缺少 _dl_mgr 的不完整 DrissionPage 单例时，SDK 会清理对应缓存并重新连接，避免后续创建页面时报 AttributeError。
+
 ## [0.1.17] - 2026-07-27
 
 ### 新增

@@ -188,6 +188,11 @@ class StoreOpenOptions(TypedDict, total=False):
 
 class BrowserSessionProtocol(Protocol):
     """浏览器会话协议"""
+
+    @property
+    def page(self):
+        """获取已验证的当前业务标签页"""
+        ...
     
     def check_ip(self, ip_check_url: Optional[str] = None, timeout: int = 60) -> bool:
         """检查 IP 是否可用"""

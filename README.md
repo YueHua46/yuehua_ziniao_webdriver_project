@@ -192,6 +192,9 @@ session.open_launcher_page()
 # 获取标签页
 tab = session.get_tab()
 
+# 推荐：直接复用 SDK 已验证的业务页面
+page = session.page
+
 # 导航到 URL
 session.navigate("https://example.com", wait_time=2)
 
@@ -337,6 +340,7 @@ setup_logging(
 #### 属性
 
 - `browser` - DrissionPage 的 Chromium 对象
+- `page` - 已完成 SDK 健康检查的当前业务标签页；不要再按调试端口构造 `ChromiumPage`
 - `store_id` - 店铺 ID
 - `store_name` - 店铺名称
 - `port` - 调试端口
