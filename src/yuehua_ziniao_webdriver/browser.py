@@ -177,14 +177,14 @@ class BrowserSession:
             f"host={host}, port={port}, store_id={store_id}"
         )
         
-        # 初始化阶段尚未打开 IP 检测页和平台主页，只验证浏览器级连接。
-        # 普通网页标签必须等启动流程完成后再验证，避免形成启动死锁。
         try:
             if proxy_host:
                 self._cdp_proxy = CdpTcpProxy(proxy_host, port, host, port)
                 self._cdp_proxy.start()
-            self.reconnect(require_web_page=False)
-            logger.info(f"成功连接到浏览器：{store_name}")
+            # startBrowser 返回时插件和页面 WebSocket 仍可能重建。此处只
+            # 保存 CDP 地址，等 HTTP(S) 页面 target 稳定后再首次创建
+            # DrissionPage Chromium，避免留下半初始化全局单例。
+            logger.debug("浏览器会话已创建，等待业务页面后惰性连接：%s", store_name)
         except Exception as e:
             if self._cdp_proxy is not None:
                 self._cdp_proxy.stop()
@@ -251,20 +251,66 @@ class BrowserSession:
                 registry.pop(browser_id, None)
 
     @classmethod
-    def _ensure_browser_initialized(
-        cls,
-        browser: Chromium,
-        timeout: float,
-    ) -> None:
-        """等待 DrissionPage 完成浏览器级服务初始化。"""
+    def _discard_incomplete_cached_browser(cls, browser_id: Optional[str]) -> None:
+        """Remove this CDP browser's stale singleton after interrupted startup."""
+        if not browser_id:
+            return
+        registry = getattr(Chromium, "_BROWSERS", None)
+        if not isinstance(registry, dict):
+            return
+        browser = registry.get(browser_id)
+        if (
+            browser is not None
+            and getattr(browser, "_created", False)
+            and not hasattr(browser, "_dl_mgr")
+        ):
+            cls._discard_browser_reference(browser)
+
+    def _get_cdp_browser_id(self) -> Optional[str]:
+        """Read the exact browser target ID without opening a WebSocket."""
+        response = requests.get(f"{self._cdp_base_url()}/json/version", timeout=5)
+        response.raise_for_status()
+        try:
+            websocket_url = str(response.json().get("webSocketDebuggerUrl") or "")
+            return websocket_url.rstrip("/").rsplit("/", 1)[-1] or None
+        finally:
+            response.close()
+
+    def wait_for_web_page_target(
+        self,
+        url_prefix: Optional[str] = None,
+        timeout: float = 30,
+        poll_interval: float = 0.5,
+        stable_polls: int = 2,
+    ) -> bool:
+        """Wait for a stable HTTP(S) page target using only the CDP HTTP API."""
         deadline = time.monotonic() + max(0.0, timeout)
-        while not hasattr(browser, "_dl_mgr"):
+        consecutive = 0
+        while True:
+            try:
+                found = False
+                for target in self._list_cdp_tabs():
+                    url = str(target.get("url") or "")
+                    if target.get("type") not in ("page", "webview"):
+                        continue
+                    if not target.get("webSocketDebuggerUrl"):
+                        continue
+                    if not url.startswith(("http://", "https://")):
+                        continue
+                    if url_prefix and not url.startswith(url_prefix):
+                        continue
+                    found = True
+                    break
+                consecutive = consecutive + 1 if found else 0
+                if consecutive >= max(1, stable_polls):
+                    return True
+            except (requests.RequestException, ValueError, TypeError) as exc:
+                consecutive = 0
+                logger.debug("等待 CDP 网页 target：store=%s, error=%s", self.store_name, exc)
             if time.monotonic() >= deadline:
-                cls._discard_browser_reference(browser)
-                raise RuntimeError(
-                    "DrissionPage 浏览器对象初始化不完整：缺少 _dl_mgr，已清理缓存并准备重连"
-                )
-            time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
+                return False
+            remaining = max(0.0, deadline - time.monotonic())
+            time.sleep(min(poll_interval, remaining))
 
     @staticmethod
     def _get_web_tabs(browser: Chromium) -> List[Any]:
@@ -302,8 +348,8 @@ class BrowserSession:
         """丢弃旧对象并重新连接浏览器，可等待普通网页通道稳定。
 
         紫鸟返回调试端口时，CDP HTTP 接口可能已经可用，但页面
-        WebSocket 通道仍会短暂断开。本方法每次都会创建新的 Chromium
-        对象，并通过读取普通网页标签确认页面通道实际可用。插件的
+        WebSocket 通道仍会短暂断开。本方法仅在 CDP HTTP 已出现网页
+        target 后创建 Chromium，并通过读取普通网页标签确认页面通道实际可用。插件的
         offscreen/background 标签可能始终无法连接，不作为健康检查依据。
 
         Args:
@@ -329,14 +375,27 @@ class BrowserSession:
         last_error: Optional[Exception] = None
         previous_browser = self._browser
         self._browser = None
+        address = self._build_cdp_address(self.host, self.port)
+
+        if require_web_page and not self.wait_for_web_page_target(
+            timeout=timeout,
+            poll_interval=retry_interval,
+        ):
+            self._browser = previous_browser
+            raise ZiniaoError(
+                "CDP 已连接，但网页 target 尚未稳定",
+                {"host": self.host, "port": self.port, "store_name": self.store_name},
+            )
 
         while True:
             browser = None
             try:
-                browser = Chromium(self._build_cdp_address(self.host, self.port))
-                remaining = max(0.0, deadline - time.monotonic())
-                initialization_timeout = min(0.5, remaining / 2)
-                self._ensure_browser_initialized(browser, initialization_timeout)
+                try:
+                    browser_id = self._get_cdp_browser_id()
+                except (requests.RequestException, ValueError, TypeError):
+                    browser_id = None
+                self._discard_incomplete_cached_browser(browser_id)
+                browser = Chromium(address)
                 if require_web_page:
                     self._select_web_tab(browser)
                 self._browser = browser
@@ -361,7 +420,7 @@ class BrowserSession:
         # 还会惰性重连，短暂页面断开不能反向判定店铺启动失败。
         self._browser = previous_browser
         error_msg = f"重新连接浏览器失败：{last_error}"
-        logger.error("%s, store=%s", error_msg, self.store_name)
+        logger.debug("%s, store=%s", error_msg, self.store_name)
         raise ZiniaoError(
             error_msg,
             {
@@ -424,6 +483,13 @@ class BrowserSession:
         
         try:
             logger.info(f"开始 IP 检测：{self.store_name}")
+
+            if not self.wait_for_web_page_target(
+                timeout=timeout,
+                poll_interval=0.5,
+            ):
+                logger.warning("IP 检测页面尚未稳定：%s", self.store_name)
+                return False
             
             tab = self.get_tab()
             tab.get(url)
@@ -442,7 +508,7 @@ class BrowserSession:
                 return False
                 
         except Exception as e:
-            logger.error(f"IP 检测异常：{self.store_name}, 错误：{e}")
+            logger.warning(f"IP 检测暂不可用：{self.store_name}, 错误：{e}")
             return False
     
     def open_launcher_page(
