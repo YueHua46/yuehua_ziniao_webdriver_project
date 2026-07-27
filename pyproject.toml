@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "yuehua-ziniao-webdriver"
-version = "0.1.16"
+version = "0.1.17"
 description = "紫鸟浏览器自动化 Python SDK - 提供店铺管理、浏览器控制等功能"
 authors = [
     { name = "Yuehua", email = "shengxi_2000@outlook.com" }
@@ -46,10 +46,10 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/yuehua-ziniao-webdriver"
-Documentation = "https://github.com/yourusername/yuehua-ziniao-webdriver#readme"
-Repository = "https://github.com/yourusername/yuehua-ziniao-webdriver"
-Issues = "https://github.com/yourusername/yuehua-ziniao-webdriver/issues"
+Homepage = "https://github.com/YueHua46/yuehua_ziniao_webdriver_project"
+Documentation = "https://github.com/YueHua46/yuehua_ziniao_webdriver_project#readme"
+Repository = "https://github.com/YueHua46/yuehua_ziniao_webdriver_project"
+Issues = "https://github.com/YueHua46/yuehua_ziniao_webdriver_project/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]

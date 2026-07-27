@@ -202,25 +202,23 @@ session.close()
 ### 平台模块（Amazon 示例）
 
 ```python
-from yuehua_ziniao_webdriver import setup_logging
-from yuehua_ziniao_webdriver.platforms.amazon import (
-    handle_login,
-    switch_language_to_cn,
-    switch_site,
-)
+from yuehua_ziniao_webdriver.platforms.amazon import AmazonSellerCentral
 
-setup_logging()
+session = client.open_store_by_name("STORE_NAME", exact_match=True)
+amazon = AmazonSellerCentral(session.get_tab())
 
-session = client.open_store_by_name("我的店铺")
-tab = session.get_tab()
+# 登录、弹窗、站点和语言分别校验各自的完成状态
+amazon.ensure_logged_in()
+amazon.dismiss_known_popups()
+amazon.switch_marketplace("US")
+amazon.switch_language("zh_CN")
 
-# 切换语言与站点
-switch_language_to_cn(tab)
-switch_site(tab, "US")
-
-# 如遇登录页，执行登录流程
-handle_login(tab)
+# 或使用组合入口
+amazon.prepare(marketplace="US", locale="zh_CN")
 ```
+
+Amazon 模块只操作已经打开的 DrissionPage 标签页，不读取紫鸟账号、公司或店铺配置。
+登录、MFA、站点和语言切换分别等待明确的页面状态，不依赖通用 loading 动画判断。
 
 ### 5. 配置管理
 
@@ -230,9 +228,9 @@ from yuehua_ziniao_webdriver import ZiniaoConfig
 # 方式 1：代码配置
 config = ZiniaoConfig(
     client_path=r"D:\ziniao\ziniao.exe",
-    company="企业名",
-    username="用户名",
-    password="密码"
+    company="COMPANY",
+    username="USERNAME",
+    password="PASSWORD"
 )
 
 # 方式 2：从字典

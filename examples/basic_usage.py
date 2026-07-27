@@ -257,30 +257,22 @@ def example_amazon_platform():
     """Amazon 平台模块示例"""
     print("\n=== 示例 7: 平台模块（Amazon） ===\n")
 
-    from yuehua_ziniao_webdriver.platforms.amazon import (
-        handle_login,
-        switch_language_to_cn,
-        switch_site,
-    )
+    from yuehua_ziniao_webdriver.platforms.amazon import AmazonSellerCentral
 
     config = ZiniaoConfig(
         client_path=r"D:\ziniao\ziniao.exe",
-        company="你的企业名",
-        username="你的用户名",
-        password="你的密码",
+        company="COMPANY",
+        username="USERNAME",
+        password="PASSWORD",
         version="v6"
     )
 
     with ZiniaoClient(config) as client:
-        session = client.open_store_by_name("我的店铺")
+        session = client.open_store_by_name("STORE_NAME", exact_match=True)
         if session.check_ip():
             session.open_launcher_page()
-            tab = session.get_tab()
-
-            switch_language_to_cn(tab)
-            switch_site(tab, "US")
-            if "signin" in tab.url:
-                handle_login(tab)
+            amazon = AmazonSellerCentral(session.get_tab())
+            amazon.prepare(marketplace="US", locale="zh_CN")
 
 
 # ============================================================================
