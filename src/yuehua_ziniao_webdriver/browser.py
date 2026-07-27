@@ -266,6 +266,33 @@ class BrowserSession:
                 )
             time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
 
+    @staticmethod
+    def _get_web_tabs(browser: Chromium) -> List[Any]:
+        """Return accessible HTTP(S) tabs, ignoring stale extension targets."""
+        web_tabs: List[Any] = []
+        for tab in browser.get_tabs():
+            try:
+                url = tab.url or ""
+            except Exception as exc:
+                logger.debug("忽略无法访问的非网页标签：%s", exc)
+                continue
+            if url.startswith(("http://", "https://")):
+                web_tabs.append(tab)
+        return web_tabs
+
+    @classmethod
+    def _select_web_tab(cls, browser: Chromium, index: int = -1):
+        """Select an accessible business tab without touching ``latest_tab``."""
+        tabs = cls._get_web_tabs(browser)
+        if not tabs:
+            raise RuntimeError("CDP 已连接，但尚未发现可访问的网页标签")
+        if index == -1:
+            # DrissionPage get_tabs() follows tab_ids order, newest first.
+            return tabs[0]
+        if 0 <= index < len(tabs):
+            return tabs[index]
+        raise IndexError(f"标签页索引超出范围：{index}")
+
     def reconnect(
         self,
         timeout: float = 10,
@@ -311,21 +338,7 @@ class BrowserSession:
                 initialization_timeout = min(0.5, remaining / 2)
                 self._ensure_browser_initialized(browser, initialization_timeout)
                 if require_web_page:
-                    # latest_tab 可能命中插件的 offscreen/background 标签，
-                    # 新版紫鸟下这些标签可能永久断开。只用可访问的普通网页
-                    # 标签验证页面通道，并忽略单个不可访问的插件标签。
-                    http_tab_found = False
-                    for tab in browser.get_tabs():
-                        try:
-                            url = tab.url or ""
-                        except Exception as e:
-                            logger.debug("忽略无法访问的非网页标签：%s", e)
-                            continue
-                        if url.startswith(("http://", "https://")):
-                            http_tab_found = True
-                            break
-                    if not http_tab_found:
-                        raise RuntimeError("CDP 已连接，但尚未发现可访问的网页标签")
+                    self._select_web_tab(browser)
                 self._browser = browser
                 logger.info(f"浏览器连接已刷新：{self.store_name}")
                 return browser
@@ -366,15 +379,10 @@ class BrowserSession:
             index: 标签页索引，-1 表示最新的标签页（默认）
             
         Returns:
-            标签页对象
+            可访问的 HTTP(S) 业务标签页对象
         """
         def select_tab(browser):
-            if index == -1:
-                return browser.latest_tab
-            tabs = browser.tabs
-            if 0 <= index < len(tabs):
-                return tabs[index]
-            raise IndexError(f"标签页索引超出范围：{index}")
+            return self._select_web_tab(browser, index=index)
 
         try:
             return select_tab(self.browser)

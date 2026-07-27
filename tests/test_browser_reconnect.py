@@ -25,8 +25,7 @@ class DisconnectedPluginTab:
 
 
 class DisconnectedBrowser:
-    @property
-    def latest_tab(self):
+    def get_tabs(self):
         raise RuntimeError("page channel disconnected")
 
 
@@ -114,9 +113,27 @@ def test_reconnect_raises_when_session_is_closed() -> None:
 def test_page_property_reuses_current_session_tab() -> None:
     session = make_session()
     tab = Mock(name="business_tab")
-    session._browser.latest_tab = tab
+    session._browser.get_tabs.return_value = [
+        DisconnectedPluginTab(),
+        Mock(url="chrome-extension://example/background.html"),
+        tab,
+    ]
+    tab.url = "https://sellercentral.amazon.com/home"
 
     assert session.page is tab
+
+
+def test_get_tab_skips_disconnected_latest_plugin_tab() -> None:
+    session = make_session()
+    business_tab = Mock(url="https://sellercentral.amazon.co.jp/home")
+    session._browser.get_tabs.return_value = [
+        DisconnectedPluginTab(),
+        Mock(url="chrome-extension://example/background.html"),
+        business_tab,
+    ]
+
+    assert session.get_tab() is business_tab
+    session._browser.get_tabs.assert_called_once_with()
 
 
 def test_incomplete_drissionpage_browser_is_discarded() -> None:
@@ -160,7 +177,9 @@ def test_get_tab_lazily_reconnects_a_disconnected_session() -> None:
     session = make_session()
     session._browser = DisconnectedBrowser()
     page = Mock(name="recovered_page")
-    recovered_browser = Mock(latest_tab=page)
+    page.url = "https://sellercentral.amazon.com/home"
+    recovered_browser = Mock()
+    recovered_browser.get_tabs.return_value = [page]
     session.reconnect = Mock(return_value=recovered_browser)
 
     assert session.get_tab() is page
