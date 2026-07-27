@@ -17,7 +17,8 @@ from .exceptions import (
     StoreNotFoundError,
     MultipleStoresFoundError,
     StoreOperationError,
-    UnsupportedVersionError
+    UnsupportedVersionError,
+    ZiniaoError,
 )
 
 logger = logging.getLogger(__name__)
@@ -267,11 +268,22 @@ class StoreManager:
             # 启动阶段的 IP 检测可能正好撞上新版紫鸟 CDP 页面通道的
             # 短暂不稳定窗口。返回会话前必须丢弃早期对象并重新附加，
             # 避免调用方拿到已经断开的 Chromium 实例。
-            session.reconnect(
-                timeout=float(opts.get("cdpReconnectTimeout", 10)),
-                retry_interval=float(opts.get("cdpReconnectInterval", 0.5)),
-                require_web_page=bool(launcher_page),
-            )
+            try:
+                session.reconnect(
+                    timeout=float(opts.get("cdpReconnectTimeout", 10)),
+                    retry_interval=float(opts.get("cdpReconnectInterval", 0.5)),
+                    require_web_page=bool(launcher_page),
+                )
+            except ZiniaoError as exc:
+                # startBrowser 已明确成功。这里只是页面 CDP 通道仍在抖动，
+                # 不应把已打开店铺误判为启动失败，更不能触发客户端级重启。
+                logger.warning(
+                    "店铺已打开，但最终页面连接暂未稳定；保留会话并在首次访问页面时重连："
+                    "store=%s, port=%s, error=%s",
+                    store_name,
+                    debugging_port,
+                    exc,
+                )
 
             return session
             

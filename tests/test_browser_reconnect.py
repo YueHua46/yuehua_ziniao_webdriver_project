@@ -24,6 +24,12 @@ class DisconnectedPluginTab:
         raise RuntimeError("plugin page websocket disconnected")
 
 
+class DisconnectedBrowser:
+    @property
+    def latest_tab(self):
+        raise RuntimeError("page channel disconnected")
+
+
 def test_session_initialization_does_not_require_web_page() -> None:
     connected_browser = Mock(name="connected_browser")
 
@@ -85,11 +91,15 @@ def test_reconnect_retries_until_http_page_is_available() -> None:
         side_effect=[waiting_browser, connected_browser],
     ) as chromium:
         with patch("yuehua_ziniao_webdriver.browser.time.sleep") as sleep:
-            result = session.reconnect(timeout=10, retry_interval=0.5)
+            with patch.object(
+                BrowserSession, "_discard_browser_reference"
+            ) as discard:
+                result = session.reconnect(timeout=10, retry_interval=0.5)
 
     assert result is connected_browser
     assert session.browser is connected_browser
     assert chromium.call_count == 2
+    discard.assert_called_once_with(waiting_browser)
     sleep.assert_called_once_with(0.5)
 
 
@@ -114,7 +124,7 @@ def test_incomplete_drissionpage_browser_is_discarded() -> None:
 
     with patch.object(
         BrowserSession,
-        "_discard_incomplete_browser",
+        "_discard_browser_reference",
     ) as discard:
         with pytest.raises(RuntimeError, match="缺少 _dl_mgr"):
             BrowserSession._ensure_browser_initialized(browser, timeout=0)
@@ -133,7 +143,7 @@ def test_reconnect_retries_after_incomplete_drissionpage_browser() -> None:
     ) as chromium:
         with patch.object(
             BrowserSession,
-            "_discard_incomplete_browser",
+            "_discard_browser_reference",
         ):
             result = session.reconnect(
                 timeout=1,
@@ -144,3 +154,18 @@ def test_reconnect_retries_after_incomplete_drissionpage_browser() -> None:
     assert result is ready
     assert session.browser is ready
     assert chromium.call_count == 2
+
+
+def test_get_tab_lazily_reconnects_a_disconnected_session() -> None:
+    session = make_session()
+    session._browser = DisconnectedBrowser()
+    page = Mock(name="recovered_page")
+    recovered_browser = Mock(latest_tab=page)
+    session.reconnect = Mock(return_value=recovered_browser)
+
+    assert session.get_tab() is page
+    session.reconnect.assert_called_once_with(
+        timeout=10,
+        retry_interval=0.5,
+        require_web_page=True,
+    )

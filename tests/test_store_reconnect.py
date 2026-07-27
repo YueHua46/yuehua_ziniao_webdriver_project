@@ -1,5 +1,6 @@
 from unittest.mock import Mock, patch
 
+from yuehua_ziniao_webdriver.exceptions import ZiniaoError
 from yuehua_ziniao_webdriver.store import StoreManager
 
 
@@ -32,3 +33,26 @@ def test_open_store_refreshes_browser_connection_before_returning() -> None:
         retry_interval=0.25,
         require_web_page=True,
     )
+
+
+def test_open_store_keeps_session_when_final_page_refresh_is_transient() -> None:
+    http_client = Mock()
+    http_client.send_request.return_value = {
+        "statusCode": 0,
+        "debuggingPort": 9222,
+        "browserOauth": "oauth-id",
+        "ipDetectionPage": None,
+        "launcherPage": "https://example.test/home",
+    }
+    manager = StoreManager(
+        http_client, {"company": "c", "username": "u", "password": "p"}
+    )
+    manager._get_store_name = Mock(return_value="test-store")
+    session = Mock()
+    session.reconnect.side_effect = ZiniaoError("temporary page disconnect")
+
+    with patch("yuehua_ziniao_webdriver.store.BrowserSession", return_value=session):
+        result = manager.open_store("oauth-id")
+
+    assert result is session
+    session.close.assert_not_called()

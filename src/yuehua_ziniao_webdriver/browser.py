@@ -235,8 +235,8 @@ class BrowserSession:
         return self.get_tab()
 
     @staticmethod
-    def _discard_incomplete_browser(browser: Chromium) -> None:
-        """清理损坏的 DrissionPage 单例，使重连能够重新创建对象。"""
+    def _discard_browser_reference(browser: Chromium) -> None:
+        """丢弃 Python 连接缓存，不关闭已经启动的真实浏览器。"""
         registry = getattr(Chromium, "_BROWSERS", None)
         browser_id = getattr(browser, "id", None)
         if not isinstance(registry, dict) or not browser_id:
@@ -260,7 +260,7 @@ class BrowserSession:
         deadline = time.monotonic() + max(0.0, timeout)
         while not hasattr(browser, "_dl_mgr"):
             if time.monotonic() >= deadline:
-                cls._discard_incomplete_browser(browser)
+                cls._discard_browser_reference(browser)
                 raise RuntimeError(
                     "DrissionPage 浏览器对象初始化不完整：缺少 _dl_mgr，已清理缓存并准备重连"
                 )
@@ -300,9 +300,11 @@ class BrowserSession:
 
         deadline = time.monotonic() + timeout
         last_error: Optional[Exception] = None
+        previous_browser = self._browser
         self._browser = None
 
         while True:
+            browser = None
             try:
                 browser = Chromium(self._build_cdp_address(self.host, self.port))
                 remaining = max(0.0, deadline - time.monotonic())
@@ -330,6 +332,8 @@ class BrowserSession:
             except Exception as e:
                 last_error = e
                 self._browser = None
+                if browser is not None:
+                    self._discard_browser_reference(browser)
                 if time.monotonic() >= deadline:
                     break
                 logger.debug(
@@ -340,6 +344,9 @@ class BrowserSession:
                 remaining = max(0.0, deadline - time.monotonic())
                 time.sleep(min(retry_interval, remaining))
 
+        # 保留开店阶段已建立的对象。调用方通过 get_tab()/page 首次访问时
+        # 还会惰性重连，短暂页面断开不能反向判定店铺启动失败。
+        self._browser = previous_browser
         error_msg = f"重新连接浏览器失败：{last_error}"
         logger.error("%s, store=%s", error_msg, self.store_name)
         raise ZiniaoError(
@@ -361,14 +368,30 @@ class BrowserSession:
         Returns:
             标签页对象
         """
-        if index == -1:
-            return self.browser.latest_tab
-        else:
-            tabs = self.browser.tabs
+        def select_tab(browser):
+            if index == -1:
+                return browser.latest_tab
+            tabs = browser.tabs
             if 0 <= index < len(tabs):
                 return tabs[index]
-            else:
-                raise IndexError(f"标签页索引超出范围：{index}")
+            raise IndexError(f"标签页索引超出范围：{index}")
+
+        try:
+            return select_tab(self.browser)
+        except IndexError:
+            raise
+        except Exception as exc:
+            logger.warning(
+                "当前页面连接不可用，执行惰性重连：store=%s, error=%s",
+                self.store_name,
+                exc,
+            )
+            browser = self.reconnect(
+                timeout=10,
+                retry_interval=0.5,
+                require_web_page=True,
+            )
+            return select_tab(browser)
     
     def check_ip(
         self,
