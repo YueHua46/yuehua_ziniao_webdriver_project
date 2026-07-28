@@ -2,7 +2,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from yuehua_ziniao_webdriver.exceptions import StoreOperationError, ZiniaoError
+from yuehua_ziniao_webdriver.exceptions import NetworkVerificationError, ZiniaoError
 from yuehua_ziniao_webdriver.store import StoreManager
 
 
@@ -122,7 +122,7 @@ def test_network_failure_raises_only_after_three_full_attempts() -> None:
         "yuehua_ziniao_webdriver.store.BrowserSession",
         side_effect=sessions,
     ):
-        with pytest.raises(StoreOperationError, match="连续 3 次"):
+        with pytest.raises(NetworkVerificationError, match="连续 3 次"):
             manager.open_store("oauth-id")
 
     for session in sessions:

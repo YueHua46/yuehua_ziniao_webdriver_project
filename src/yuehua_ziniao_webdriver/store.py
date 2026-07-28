@@ -16,6 +16,7 @@ from .utils import fuzzy_match, exact_match
 from .exceptions import (
     StoreNotFoundError,
     MultipleStoresFoundError,
+    NetworkVerificationError,
     StoreOperationError,
     UnsupportedVersionError,
     ZiniaoError,
@@ -166,11 +167,7 @@ class StoreManager:
                 return self._open_store_once(store_identifier, options=options)
             except _NetworkVerificationError as exc:
                 if attempt >= 3:
-                    raise StoreOperationError(
-                        "打开",
-                        store_identifier,
-                        message="连续 3 次打开店铺后 IP/网络验证均未通过",
-                    ) from exc
+                    raise NetworkVerificationError(store_identifier, attempts=3) from exc
                 logger.warning(
                     "IP/网络验证未通过，已关闭店铺并准备重新打开："
                     "store=%s, attempt=%d/3",

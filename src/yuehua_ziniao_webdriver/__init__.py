@@ -20,7 +20,7 @@
     ...         tab.get("https://example.com")
 """
 
-__version__ = "0.1.23"
+__version__ = "0.1.24"
 __author__ = "Yuehua"
 __email__ = "shengxi_2000@outlook.com"
 
@@ -49,6 +49,7 @@ from .exceptions import (
     StoreNotFoundError,
     MultipleStoresFoundError,
     StoreOperationError,
+    NetworkVerificationError,
     IPCheckError,
     CoreUpdateError,
     UnsupportedVersionError,
@@ -119,6 +120,7 @@ __all__ = [
     "StoreNotFoundError",
     "MultipleStoresFoundError",
     "StoreOperationError",
+    "NetworkVerificationError",
     "IPCheckError",
     "CoreUpdateError",
     "UnsupportedVersionError",

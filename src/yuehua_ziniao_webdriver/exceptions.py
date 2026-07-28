@@ -195,6 +195,18 @@ class StoreOperationError(StoreError):
         self.status_code = status_code
 
 
+class NetworkVerificationError(StoreOperationError):
+    """Raised after all store network-verification attempts are exhausted."""
+
+    def __init__(self, store_id: str, attempts: int = 3) -> None:
+        self.attempts = attempts
+        super().__init__(
+            "打开",
+            store_id,
+            message=f"连续 {attempts} 次打开店铺后 IP/网络验证均未通过",
+        )
+
+
 class IPCheckError(ZiniaoError):
     """IP 检测错误
     
