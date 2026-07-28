@@ -197,6 +197,10 @@ class BrowserSessionProtocol(Protocol):
     def check_ip(self, ip_check_url: Optional[str] = None, timeout: int = 60) -> bool:
         """检查 IP 是否可用"""
         ...
+
+    def verify_business_page(self, timeout: float = 15) -> bool:
+        """验证启动页或业务页面是否真实加载"""
+        ...
     
     def get_tab(self):
         """获取当前标签页"""

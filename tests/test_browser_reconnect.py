@@ -244,3 +244,19 @@ def test_auto_closed_ip_target_is_success() -> None:
 
     assert session.check_ip()
     session.reconnect.assert_not_called()
+
+
+def test_loaded_business_page_confirms_network_success() -> None:
+    session = make_session()
+    tab = Mock(url="https://sellercentral.amazon.com/home")
+    session._active_tab = tab
+
+    assert session.verify_business_page(timeout=3)
+    tab.wait.doc_loaded.assert_called_once_with(timeout=3)
+
+
+def test_chrome_error_page_fails_network_verification() -> None:
+    session = make_session()
+    session._active_tab = Mock(url="chrome-error://chromewebdata/")
+
+    assert not session.verify_business_page(timeout=3)

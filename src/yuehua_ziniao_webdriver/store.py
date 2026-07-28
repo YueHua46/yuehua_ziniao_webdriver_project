@@ -24,6 +24,10 @@ from .exceptions import (
 logger = logging.getLogger(__name__)
 
 
+class _NetworkVerificationError(Exception):
+    """Internal signal used to retry a full store-open lifecycle."""
+
+
 class StoreManager:
     """店铺管理器
     
@@ -156,6 +160,30 @@ class StoreManager:
         store_identifier: str,
         options: Optional[StoreOpenOptions] = None,
     ) -> BrowserSession:
+        """Open a store and require network verification, retrying up to 3 times."""
+        for attempt in range(1, 4):
+            try:
+                return self._open_store_once(store_identifier, options=options)
+            except _NetworkVerificationError as exc:
+                if attempt >= 3:
+                    raise StoreOperationError(
+                        "打开",
+                        store_identifier,
+                        message="连续 3 次打开店铺后 IP/网络验证均未通过",
+                    ) from exc
+                logger.warning(
+                    "IP/网络验证未通过，已关闭店铺并准备重新打开："
+                    "store=%s, attempt=%d/3",
+                    store_identifier,
+                    attempt,
+                )
+        raise AssertionError("unreachable")
+
+    def _open_store_once(
+        self,
+        store_identifier: str,
+        options: Optional[StoreOpenOptions] = None,
+    ) -> BrowserSession:
         """打开店铺
         
         Args:
@@ -283,6 +311,15 @@ class StoreManager:
                     store_name,
                     debugging_port,
                     exc,
+                )
+
+            network_ok = session.verify_business_page(
+                timeout=float(opts.get("cdpReconnectTimeout", 10))
+            )
+            if not network_ok:
+                session.close()
+                raise _NetworkVerificationError(
+                    f"店铺业务页面未能正常加载：{store_name}"
                 )
 
             return session

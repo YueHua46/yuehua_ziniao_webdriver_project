@@ -566,7 +566,10 @@ class BrowserSession:
                 return True
             if scheme == "chrome-extension":
                 if target_state == "stable":
-                    logger.info("紫鸟内部 IP 检测 target 已创建：%s", self.store_name)
+                    logger.info(
+                        "紫鸟内部 IP 检测已触发，结果将在启动页加载后验证：%s",
+                        self.store_name,
+                    )
                     return True
                 logger.warning("紫鸟内部 IP 检测 target 未就绪：%s", self.store_name)
                 return False
@@ -603,6 +606,36 @@ class BrowserSession:
                 logger.info("IP 检测 target 已自动关闭，检测流程完成：%s", self.store_name)
                 return True
             logger.warning(f"IP 检测暂不可用：{self.store_name}, 错误：{e}")
+            return False
+
+    def verify_business_page(self, timeout: float = 15) -> bool:
+        """Verify that the selected launcher/Seller Central page really loaded."""
+        try:
+            tab = self._active_tab or self.get_tab()
+            try:
+                tab.wait.doc_loaded(timeout=timeout)
+            except Exception:
+                pass
+            url = str(tab.url or "")
+            if not url.startswith(("http://", "https://")):
+                logger.warning(
+                    "IP/网络验证失败：业务页面未正常加载，store=%s, url=%s",
+                    self.store_name,
+                    url or "<empty>",
+                )
+                return False
+            logger.info(
+                "IP/网络验证成功：%s，业务页面已加载：%s",
+                self.store_name,
+                url,
+            )
+            return True
+        except Exception as exc:
+            logger.warning(
+                "IP/网络验证失败：store=%s, error=%s",
+                self.store_name,
+                exc,
+            )
             return False
     
     def open_launcher_page(
